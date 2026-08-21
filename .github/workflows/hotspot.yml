@@ -1,0 +1,23 @@
+# Example workflow — drop this into a consuming repo at .github/workflows/hotspot.yml
+name: Hotspot
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: write # required to post the PR comment
+
+jobs:
+  hotspot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # REQUIRED: behavioral metrics need full git history
+
+      - uses: your-org/hotspot-tool@v1
+        with:
+          enforcement-level: warn # info | warn | block
+          history-window-days: 90
+          # distance-max: 0.7      # opt-in hard gate on Martin's Distance

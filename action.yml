@@ -1,0 +1,68 @@
+name: "Hotspot Tool"
+description: "Finds where your codebase is actively rotting — the intersection of messy and frequently-changed code — and pushes teams to leave hotspots better than they found them."
+author: "hotspot-tool"
+branding:
+  icon: "activity"
+  color: "orange"
+
+inputs:
+  enforcement-level:
+    description: "info | warn | block. info = report only; warn = comment, non-blocking (default); block = fail the check on hotspots."
+    required: false
+    default: "warn"
+  history-window-days:
+    description: "How many days of git history to consider for behavioral metrics."
+    required: false
+    default: "90"
+  hotspot-threshold:
+    description: "Percentile cutoff for the hotspot rank (90 = top 10%). A file must also clear the absolute floors below."
+    required: false
+    default: "90"
+  change-freq-min:
+    description: "Absolute floor: minimum commits within the window for a file to qualify as a hotspot."
+    required: false
+    default: "5"
+  complexity-min:
+    description: "Absolute floor: minimum cyclomatic complexity for a file to qualify as a hotspot. (Applied once the static engine lands; ignored while behavioral-only.)"
+    required: false
+    default: "10"
+  distance-max:
+    description: "OPTIONAL hard gate on Martin's Distance (0-1). Unset by default. When set, any touched file whose D exceeds it fails the check independently of the hotspot score."
+    required: false
+    default: ""
+  bugfix-patterns:
+    description: "Newline- or comma-separated regex patterns identifying bug-fix commits (for the bug-fix ratio heuristic)."
+    required: false
+    default: "fix,bug,patch,hotfix,revert"
+  module-definition:
+    description: "Per-language unit for Martin's metrics: file | directory | workspace."
+    required: false
+    default: "directory"
+  languages:
+    description: "Comma-separated static analyzers to enable, or 'auto' to detect available grammars."
+    required: false
+    default: "auto"
+  comment:
+    description: "Whether to post/update the PR comment."
+    required: false
+    default: "true"
+  generate-map:
+    description: "Whether to render the hotspot map image on full runs."
+    required: false
+    default: "true"
+  github-token:
+    description: "Token used to post the PR comment. Defaults to the workflow token."
+    required: false
+    default: ${{ github.token }}
+
+outputs:
+  hotspot-count:
+    description: "Number of files identified as hotspots across the repo."
+  touched-hotspot-count:
+    description: "Number of hotspot files touched by this PR (the gated set)."
+  gate-status:
+    description: "pass | warn | fail."
+
+runs:
+  using: "node20"
+  main: "dist/index.js"

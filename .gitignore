@@ -1,0 +1,5 @@
+node_modules/
+lib/
+*.log
+.DS_Store
+# dist/ is committed for JS actions — do NOT ignore it once you ship.
