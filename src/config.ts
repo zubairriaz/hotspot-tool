@@ -63,6 +63,9 @@ export function loadConfig(): Config {
   const languagesRaw = (core.getInput("languages") || "auto").trim();
   const languages = languagesRaw.toLowerCase() === "auto" ? "auto" : parseList(languagesRaw);
 
+  const excludesRaw = core.getInput("excludes") || "";
+  const excludes = excludesRaw.trim() === "" ? [] : parseList(excludesRaw);
+
   return {
     enforcementLevel,
     historyWindowDays: parseInt10(core.getInput("history-window-days") || "90", 90, "history-window-days"),
@@ -73,8 +76,10 @@ export function loadConfig(): Config {
     bugfixPatterns,
     moduleDefinition,
     languages,
+    excludes,
     comment: (core.getInput("comment") || "true").toLowerCase() !== "false",
     generateMap: (core.getInput("generate-map") || "true").toLowerCase() !== "false",
+    generateArtifact: (core.getInput("generate-artifact") || "true").toLowerCase() !== "false",
     githubToken: core.getInput("github-token"),
   };
 }

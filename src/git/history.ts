@@ -1,5 +1,6 @@
 import { git } from "./exec";
 import type { Config, FileHistory } from "../types";
+import { isExcluded } from "../utils/glob";
 
 const FIELD = "\x1f"; // unit separator between fields
 const MARK = "__HOTSPOT_COMMIT__"; // begins each commit record
@@ -12,10 +13,11 @@ interface Commit {
   files: string[];
 }
 
-/** Files git currently tracks — used to drop history for deleted/moved paths. */
-export async function trackedFiles(cwd = process.cwd()): Promise<Set<string>> {
+/** Files git currently tracks, minus any matching the excludes patterns. */
+export async function trackedFiles(cwd = process.cwd(), excludes: string[] = []): Promise<Set<string>> {
   const out = await git(["ls-files"], cwd);
-  return new Set(out.split("\n").map((l) => l.trim()).filter(Boolean));
+  const all = out.split("\n").map((l) => l.trim()).filter(Boolean);
+  return new Set(excludes.length === 0 ? all : all.filter((f) => !isExcluded(f, excludes)));
 }
 
 /**
@@ -73,7 +75,7 @@ function isBugfix(subject: string, patterns: RegExp[]): boolean {
  * outweighs churn from the edge of the window.
  */
 export async function analyzeHistory(config: Config, cwd = process.cwd()): Promise<FileHistory[]> {
-  const [commits, tracked] = await Promise.all([readCommits(config, cwd), trackedFiles(cwd)]);
+  const [commits, tracked] = await Promise.all([readCommits(config, cwd), trackedFiles(cwd, config.excludes)]);
   const now = Date.now();
   const halfLife = Math.max(1, config.historyWindowDays / 2);
 

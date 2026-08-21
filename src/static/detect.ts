@@ -1,7 +1,7 @@
 import * as path from "node:path";
 import type { Config } from "../types";
 
-export type Language = "typescript" | "javascript" | "python" | "go" | "java";
+export type Language = "typescript" | "javascript" | "python" | "go" | "java" | "rust" | "csharp";
 
 const EXT_MAP: Record<string, Language> = {
   ".ts": "typescript",
@@ -15,6 +15,8 @@ const EXT_MAP: Record<string, Language> = {
   ".py": "python",
   ".go": "go",
   ".java": "java",
+  ".rs": "rust",
+  ".cs": "csharp",
 };
 
 export function detectLanguage(filePath: string): Language | null {

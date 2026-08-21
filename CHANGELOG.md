@@ -7,6 +7,35 @@ The `v1` tag always points at the latest `1.x` release; pin a specific `vX.Y.Z` 
 
 ---
 
+## [1.2.0] — 2026-08-22
+
+### Added
+
+- **`excludes` input** — glob-based file exclusion (`dist/**`, `vendor/**`, `**/*.generated.ts`).
+  Excluded files are stripped from `git ls-files` before any analysis runs, so they
+  never appear in hotspot scores, coupling pairs, or static metrics.
+  Patterns support `*` (within a segment), `**` (across segments), and `?` (single char).
+
+- **Rust and C# language support** in the static engine.
+  - Rust: `trait` → abstract; `struct` / `enum` → concrete; `if/while/for/loop/match/=>` for complexity; relative `use crate::` / `super::` / `self::` imports tracked.
+  - C#: `interface` / `abstract class` → abstract; `class` / `struct` / `record` / `enum` → concrete; `if/foreach/switch-case/catch` for complexity.
+
+- **`hotspot-report.json` artifact** — written to `$GITHUB_WORKSPACE` on every run
+  (disable with `generate-artifact: false`). Contains `generatedAt`, `gateStatus`,
+  all hotspots with scores, touched hotspots, coupling pairs, and distance violations.
+  Designed for downstream jobs, dashboards, and trend tracking.
+
+- **`generate-artifact` action input** (default `true`) to control artifact writing.
+
+### Tests
+
+- `test/glob.test.ts` — 14 tests covering `*`, `**`, `**/`, `?`, multiple patterns,
+  real-world patterns (`node_modules/**`, `*.d.ts`, `**/__tests__/**`).
+- `test/static.test.ts` — 6 new tests for Rust and C# extraction and complexity.
+- All config fixtures updated with `excludes: []` and `generateArtifact: true`.
+
+---
+
 ## v1.1.2 — 2026-08-21
 
 - fix: correct info/warn behaviour, improve degradation logging, add gate tests (4d69ad8)

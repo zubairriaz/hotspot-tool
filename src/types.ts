@@ -14,8 +14,10 @@ export interface Config {
   bugfixPatterns: RegExp[];
   moduleDefinition: ModuleDefinition;
   languages: string[] | "auto";
+  excludes: string[];
   comment: boolean;
   generateMap: boolean;
+  generateArtifact: boolean;
   githubToken: string;
 }
 

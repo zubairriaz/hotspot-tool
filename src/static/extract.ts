@@ -13,6 +13,8 @@ export function extractSignature(source: string, lang: Language): FileSignature 
     case "python":     return extractPy(source);
     case "go":         return extractGo(source);
     case "java":       return extractJava(source);
+    case "rust":       return extractRust(source);
+    case "csharp":     return extractCS(source);
   }
 }
 
@@ -109,5 +111,41 @@ function extractJava(src: string): FileSignature {
     rawImports: [...new Set(rawImports)],
     abstractCount: interfaceCount + abstractClsCount,
     concreteCount: Math.max(0, classCount - abstractClsCount),
+  };
+}
+
+function extractRust(src: string): FileSignature {
+  const rawImports: string[] = [];
+  // Relative use paths: use crate::, use super::, use self::
+  for (const m of src.matchAll(/\buse\s+((?:crate|super|self)::[\w:]+)/g))
+    rawImports.push(m[1]!);
+
+  const traitCount  = (src.match(/\btrait\s+\w/g) ?? []).length;
+  const structCount = (src.match(/\bstruct\s+\w/g) ?? []).length;
+  const enumCount   = (src.match(/\benum\s+\w/g) ?? []).length;
+
+  return {
+    rawImports: [...new Set(rawImports)],
+    abstractCount: traitCount,
+    concreteCount: structCount + enumCount,
+  };
+}
+
+function extractCS(src: string): FileSignature {
+  const rawImports: string[] = [];
+  for (const m of src.matchAll(/^using\s+([\w.]+);/gm))
+    rawImports.push(m[1]!);
+
+  const interfaceCount   = (src.match(/\binterface\s+\w/g) ?? []).length;
+  const abstractClsCount = (src.match(/\babstract\s+class\s+\w/g) ?? []).length;
+  const classCount       = (src.match(/\bclass\s+\w/g) ?? []).length;
+  const structCount      = (src.match(/\bstruct\s+\w/g) ?? []).length;
+  const recordCount      = (src.match(/\brecord\s+\w/g) ?? []).length;
+  const enumCount        = (src.match(/\benum\s+\w/g) ?? []).length;
+
+  return {
+    rawImports: [...new Set(rawImports)],
+    abstractCount: interfaceCount + abstractClsCount,
+    concreteCount: Math.max(0, classCount - abstractClsCount) + structCount + recordCount + enumCount,
   };
 }

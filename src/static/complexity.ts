@@ -62,6 +62,34 @@ function countBranches(src: string, lang: Language): number {
         /\?(?![.?])/g,
       );
       break;
+    case "rust":
+      patterns.push(
+        /\bif\b/g,
+        /\belse\s+if\b/g,
+        /\bwhile\b/g,
+        /\bfor\b/g,
+        /\bloop\b/g,
+        /\bmatch\b/g,
+        /=>/g,    // each match arm
+        /&&/g,
+        /\|\|/g,
+      );
+      break;
+    case "csharp":
+      patterns.push(
+        /\bif\s*\(/g,
+        /\belse\s+if\s*\(/g,
+        /\bwhile\s*\(/g,
+        /\bfor\s*\(/g,
+        /\bforeach\s*\(/g,
+        /\bdo\b/g,
+        /\bcase\s+/g,
+        /\bcatch\s*\(/g,
+        /&&/g,
+        /\|\|/g,
+        /\?(?![.?])/g,
+      );
+      break;
   }
 
   return patterns.reduce((sum, re) => sum + (src.match(re)?.length ?? 0), 0);
@@ -72,6 +100,10 @@ function stripStringsAndComments(src: string, lang: Language): string {
     src = src.replace(/"""[\s\S]*?"""/g, '""');
     src = src.replace(/'''[\s\S]*?'''/g, "''");
     src = src.replace(/#[^\n]*/g, "");
+  } else if (lang === "rust") {
+    src = src.replace(/\/\*[\s\S]*?\*\//g, "");
+    src = src.replace(/\/\/[^\n]*/g, "");
+    src = src.replace(/r#"[\s\S]*?"#/g, '""'); // raw strings
   } else {
     src = src.replace(/\/\*[\s\S]*?\*\//g, "");
     src = src.replace(/\/\/[^\n]*/g, "");

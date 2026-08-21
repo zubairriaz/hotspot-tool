@@ -176,6 +176,106 @@ test("Martin: concrete module that imports others has lower D (more instability 
   assert.equal(utilsD.toFixed(2), "1.00");
 });
 
+// ── Rust ────────────────────────────────────────────────────────────────────
+
+test("Rust: detects traits as abstract and structs/enums as concrete", () => {
+  const src = `
+    trait Animal { fn speak(&self); }
+    trait Drawable {}
+    struct Dog { name: String }
+    enum Color { Red, Green, Blue }
+  `;
+  const sig = extractSignature(src, "rust");
+  assert.equal(sig.abstractCount, 2, "two traits");
+  assert.equal(sig.concreteCount, 2, "struct + enum");
+});
+
+test("Rust: extracts relative use paths", () => {
+  const src = `
+    use crate::models::User;
+    use super::handler::process;
+    use self::utils::helper;
+    use std::collections::HashMap;
+  `;
+  const sig = extractSignature(src, "rust");
+  assert.ok(sig.rawImports.some((i) => i.startsWith("crate::")));
+  assert.ok(sig.rawImports.some((i) => i.startsWith("super::")));
+  assert.ok(sig.rawImports.some((i) => i.startsWith("self::")));
+  assert.ok(!sig.rawImports.includes("std::collections::HashMap"), "external crate skipped");
+});
+
+test("Rust: complexity counts if/while/for/loop/match/arms", () => {
+  const src = `
+fn classify(x: i32) -> &'static str {
+    if x > 0 {
+        for _ in 0..x {}
+    } else if x < 0 {
+        while x < 0 { break; }
+    }
+    loop { break; }
+    match x {
+        0 => "zero",
+        1..=9 => "small",
+        _ => "other",
+    }
+}
+  `;
+  const c = computeComplexity(src, "rust");
+  // if + else if + for + while + loop + match + 3 arms = 9 + base 1
+  assert.ok(c >= 8, `expected ≥ 8, got ${c}`);
+});
+
+// ── C# ──────────────────────────────────────────────────────────────────────
+
+test("C#: detects interfaces and abstract classes as abstract", () => {
+  const src = `
+    public interface IRepository<T> { T Get(int id); }
+    public abstract class BaseService { protected abstract void Init(); }
+    public class UserService : BaseService { protected override void Init() {} }
+    public struct Point { public int X; public int Y; }
+    public record Person(string Name, int Age);
+    public enum Status { Active, Inactive }
+  `;
+  const sig = extractSignature(src, "csharp");
+  assert.equal(sig.abstractCount, 2, "interface + abstract class");
+  assert.equal(sig.concreteCount, 4, "concrete class + struct + record + enum");
+});
+
+test("C#: extracts using statements", () => {
+  const src = `
+using System;
+using System.Collections.Generic;
+using MyApp.Services;
+  `;
+  const sig = extractSignature(src, "csharp");
+  assert.ok(sig.rawImports.includes("System"));
+  assert.ok(sig.rawImports.includes("System.Collections.Generic"));
+  assert.ok(sig.rawImports.includes("MyApp.Services"));
+});
+
+test("C#: complexity counts if/else-if/foreach/switch-case/catch", () => {
+  const src = `
+void Process(List<int> items) {
+    if (items == null) throw new ArgumentNullException();
+    else if (items.Count == 0) return;
+    foreach (var item in items) {
+        switch (item) {
+            case 1: break;
+            case 2: break;
+            default: break;
+        }
+    }
+    try { } catch (Exception e) { }
+    var result = items.Count > 0 ? items[0] : -1;
+}
+  `;
+  const c = computeComplexity(src, "csharp");
+  // if + else if + foreach + 2 cases + catch + ternary = 7 + base 1
+  assert.ok(c >= 7, `expected ≥ 7, got ${c}`);
+});
+
+// ── Martin: directory mode groups files from the same folder ─────────────────
+
 test("Martin: directory mode groups files from the same folder", () => {
   const signatures = new Map([
     ["src/api/handler.ts", {

@@ -18,7 +18,7 @@ export async function analyzeCoupling(
   const minSharedCommits = opts.minSharedCommits ?? 3;
   const top = opts.top ?? 25;
 
-  const [commits, tracked] = await Promise.all([readCommits(config, cwd), trackedFiles(cwd)]);
+  const [commits, tracked] = await Promise.all([readCommits(config, cwd), trackedFiles(cwd, config.excludes)]);
 
   const fileCommits = new Map<string, number>(); // commits touching each file
   const pairCommits = new Map<string, number>(); // "a\x00b" -> shared commits

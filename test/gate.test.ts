@@ -17,8 +17,10 @@ function makeConfig(overrides: Partial<Config> = {}): Config {
     bugfixPatterns: [/fix/i],
     moduleDefinition: "directory",
     languages: "auto",
+    excludes: [],
     comment: true,
     generateMap: true,
+    generateArtifact: true,
     githubToken: "",
     ...overrides,
   };

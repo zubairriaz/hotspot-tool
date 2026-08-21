@@ -42,12 +42,20 @@ inputs:
     description: "Comma-separated static analyzers to enable, or 'auto' to detect available grammars."
     required: false
     default: "auto"
+  excludes:
+    description: "Newline- or comma-separated glob patterns for files to exclude from analysis (e.g. dist/**,**/*.generated.ts,vendor/**)."
+    required: false
+    default: ""
   comment:
     description: "Whether to post/update the PR comment."
     required: false
     default: "true"
   generate-map:
     description: "Whether to render the hotspot map image on full runs."
+    required: false
+    default: "true"
+  generate-artifact:
+    description: "Whether to write hotspot-report.json to the workspace for downstream jobs or trend tracking."
     required: false
     default: "true"
   github-token:

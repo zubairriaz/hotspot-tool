@@ -9,6 +9,7 @@ import { rankHotspots } from "./hotspot";
 import { evaluateGate } from "./gate";
 import { renderPrComment, renderJobSummary } from "./report/markdown";
 import { upsertPrComment } from "./report/pr-comment";
+import { writeArtifact } from "./report/artifact";
 import { runStaticEngine } from "./static/engine";
 
 async function run(): Promise<void> {
@@ -33,7 +34,7 @@ async function run(): Promise<void> {
   const [histories, coupling, tracked] = await Promise.all([
     analyzeHistory(config, cwd),
     analyzeCoupling(config, {}, cwd),
-    trackedFiles(cwd),
+    trackedFiles(cwd, config.excludes),
   ]);
 
   const { complexityByFile, distanceByFile } = await runStaticEngine(tracked, config, cwd);
@@ -63,6 +64,11 @@ async function run(): Promise<void> {
     await core.summary.addRaw(renderJobSummary(analysis, gate, config)).write();
   } catch (err) {
     core.warning(`Could not write job summary: ${(err as Error).message}`);
+  }
+
+  // JSON artifact (always, unless opted out)
+  if (config.generateArtifact) {
+    await writeArtifact(analysis, gate, config, cwd);
   }
 
   // PR comment — skipped in "info" mode (job summary only) and on non-PR events
