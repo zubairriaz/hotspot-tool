@@ -1,6 +1,6 @@
 {
   "name": "hotspot-tool",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A GitHub Action that finds where a codebase is actively rotting — the intersection of messy and frequently-changed code.",
   "license": "MIT",
   "type": "commonjs",
@@ -11,7 +11,13 @@
     "test": "node --import tsx --test test/*.test.ts",
     "dev": "tsx src/main.ts"
   },
-  "keywords": ["github-action", "code-quality", "hotspots", "technical-debt", "static-analysis"],
+  "keywords": [
+    "github-action",
+    "code-quality",
+    "hotspots",
+    "technical-debt",
+    "static-analysis"
+  ],
   "engines": {
     "node": ">=20"
   },
