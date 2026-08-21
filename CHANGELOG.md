@@ -4,6 +4,10 @@ All notable versions of hotspot-tool. This file is the maintained **package vers
 
 The `v1` tag always points at the latest `1.x` release; pin a specific `vX.Y.Z` tag for reproducibility.
 
+## v1.0.2 — 2026-08-21
+
+- chore: use node24 action runtime (node20 deprecated) (b699684)
+
 ## v1.0.1 — 2026-08-21
 
 - ci: add release automation + version list (publishes on every push to main) (c0d604c)
