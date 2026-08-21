@@ -2,13 +2,14 @@ import * as core from "@actions/core";
 import * as github from "@actions/github";
 import { loadConfig } from "./config";
 import { isGitRepo, isShallow } from "./git/exec";
-import { analyzeHistory } from "./git/history";
+import { analyzeHistory, trackedFiles } from "./git/history";
 import { analyzeCoupling } from "./git/coupling";
 import { changedFiles } from "./git/changed";
 import { rankHotspots } from "./hotspot";
 import { evaluateGate } from "./gate";
 import { renderPrComment, renderJobSummary } from "./report/markdown";
 import { upsertPrComment } from "./report/pr-comment";
+import { runStaticEngine } from "./static/engine";
 
 async function run(): Promise<void> {
   const config = loadConfig();
@@ -26,14 +27,13 @@ async function run(): Promise<void> {
   }
 
   core.info("Analyzing git history (whole repo)...");
-  const [histories, coupling] = await Promise.all([
+  const [histories, coupling, tracked] = await Promise.all([
     analyzeHistory(config, cwd),
     analyzeCoupling(config, {}, cwd),
+    trackedFiles(cwd),
   ]);
 
-  // M2 will populate these from the static engine; behavioral-only for now.
-  const complexityByFile = new Map<string, number>();
-  const distanceByFile = new Map<string, number>();
+  const { complexityByFile, distanceByFile } = await runStaticEngine(tracked, config, cwd);
   const behavioralOnly = complexityByFile.size === 0;
 
   const analysis = rankHotspots(histories, config, coupling, complexityByFile);
