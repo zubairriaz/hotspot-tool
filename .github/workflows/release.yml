@@ -1,0 +1,107 @@
+name: Release
+
+# Publishes a new version on every change to main:
+#   build + test -> bump version -> update CHANGELOG -> tag -> move major tag -> GitHub Release.
+#
+# Bump size is patch by default; put "#minor" or "#major" in the commit message to change it.
+# Loop-safe: the release commit is made with GITHUB_TOKEN (which does not retrigger workflows)
+# and is also marked [skip ci]; release/docs-only commits are skipped by the guard below.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write # push commits/tags and create releases
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    # Skip the bot's own release commit and any explicit [skip ci].
+    if: >-
+      !contains(github.event.head_commit.message, '[skip ci]') &&
+      !startsWith(github.event.head_commit.message, 'chore(release)')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install, verify, build
+        run: |
+          npm ci
+          npm run typecheck
+          npm test
+          npm run build
+
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Bump version
+        id: bump
+        run: |
+          MSG='${{ github.event.head_commit.message }}'
+          LEVEL=patch
+          case "$MSG" in
+            *"#major"*) LEVEL=major ;;
+            *"#minor"*) LEVEL=minor ;;
+          esac
+          NEW=$(npm version "$LEVEL" --no-git-tag-version)   # e.g. v1.0.1
+          MAJOR="v$(echo "$NEW" | sed -E 's/^v?([0-9]+).*/\1/')"
+          echo "version=$NEW"  >> "$GITHUB_OUTPUT"
+          echo "major=$MAJOR"  >> "$GITHUB_OUTPUT"
+          echo "Bumping ($LEVEL) -> $NEW (major tag $MAJOR)"
+
+      - name: Update CHANGELOG
+        run: |
+          VER='${{ steps.bump.outputs.version }}'
+          DATE=$(date -u +%Y-%m-%d)
+          SHA=$(git rev-parse --short HEAD)
+          SUBJECT=$(git log -1 --pretty=%s)
+          {
+            echo "## $VER — $DATE"
+            echo ""
+            echo "- $SUBJECT ($SHA)"
+            echo ""
+          } > .newentry.md
+          # Prepend the new entry directly above the first existing "## " version section.
+          if grep -qm1 '^## ' CHANGELOG.md; then
+            LINE=$(grep -nm1 '^## ' CHANGELOG.md | cut -d: -f1)
+            head -n $((LINE-1)) CHANGELOG.md > .changelog.tmp
+            cat .newentry.md >> .changelog.tmp
+            tail -n +$LINE CHANGELOG.md >> .changelog.tmp
+          else
+            cat CHANGELOG.md .newentry.md > .changelog.tmp
+          fi
+          mv .changelog.tmp CHANGELOG.md
+          rm -f .newentry.md
+
+      - name: Commit, tag, move major, push
+        run: |
+          VER='${{ steps.bump.outputs.version }}'
+          MAJOR='${{ steps.bump.outputs.major }}'
+          git add -A
+          git commit -m "chore(release): $VER [skip ci]"
+          git tag -a "$VER" -m "hotspot-tool $VER"
+          git tag -f "$MAJOR" -m "hotspot-tool $MAJOR (moving)"
+          git push origin HEAD:main
+          git push origin "$VER"
+          git push -f origin "$MAJOR"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VER='${{ steps.bump.outputs.version }}'
+          NOTES=$(awk '/^## /{c++} c==1{print} c==2{exit}' CHANGELOG.md)
+          gh release create "$VER" --title "$VER" --notes "$NOTES"
