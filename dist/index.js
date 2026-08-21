@@ -30019,6 +30019,8 @@ function loadConfig() {
     }).filter((r) => r !== null);
     const languagesRaw = (core.getInput("languages") || "auto").trim();
     const languages = languagesRaw.toLowerCase() === "auto" ? "auto" : parseList(languagesRaw);
+    const excludesRaw = core.getInput("excludes") || "";
+    const excludes = excludesRaw.trim() === "" ? [] : parseList(excludesRaw);
     return {
         enforcementLevel,
         historyWindowDays: parseInt10(core.getInput("history-window-days") || "90", 90, "history-window-days"),
@@ -30029,8 +30031,10 @@ function loadConfig() {
         bugfixPatterns,
         moduleDefinition,
         languages,
+        excludes,
         comment: (core.getInput("comment") || "true").toLowerCase() !== "false",
         generateMap: (core.getInput("generate-map") || "true").toLowerCase() !== "false",
+        generateArtifact: (core.getInput("generate-artifact") || "true").toLowerCase() !== "false",
         githubToken: core.getInput("github-token"),
     };
 }
@@ -30178,7 +30182,7 @@ async function analyzeCoupling(config, opts = {}, cwd = process.cwd()) {
     const maxFilesPerCommit = opts.maxFilesPerCommit ?? 25;
     const minSharedCommits = opts.minSharedCommits ?? 3;
     const top = opts.top ?? 25;
-    const [commits, tracked] = await Promise.all([(0, history_1.readCommits)(config, cwd), (0, history_1.trackedFiles)(cwd)]);
+    const [commits, tracked] = await Promise.all([(0, history_1.readCommits)(config, cwd), (0, history_1.trackedFiles)(cwd, config.excludes)]);
     const fileCommits = new Map(); // commits touching each file
     const pairCommits = new Map(); // "a\x00b" -> shared commits
     for (const commit of commits) {
@@ -30291,12 +30295,14 @@ exports.trackedFiles = trackedFiles;
 exports.readCommits = readCommits;
 exports.analyzeHistory = analyzeHistory;
 const exec_1 = __nccwpck_require__(9395);
+const glob_1 = __nccwpck_require__(339);
 const FIELD = "\x1f"; // unit separator between fields
 const MARK = "__HOTSPOT_COMMIT__"; // begins each commit record
-/** Files git currently tracks — used to drop history for deleted/moved paths. */
-async function trackedFiles(cwd = process.cwd()) {
+/** Files git currently tracks, minus any matching the excludes patterns. */
+async function trackedFiles(cwd = process.cwd(), excludes = []) {
     const out = await (0, exec_1.git)(["ls-files"], cwd);
-    return new Set(out.split("\n").map((l) => l.trim()).filter(Boolean));
+    const all = out.split("\n").map((l) => l.trim()).filter(Boolean);
+    return new Set(excludes.length === 0 ? all : all.filter((f) => !(0, glob_1.isExcluded)(f, excludes)));
 }
 /**
  * Parse `git log` over the configured window into structured commits.
@@ -30348,7 +30354,7 @@ function isBugfix(subject, patterns) {
  * outweighs churn from the edge of the window.
  */
 async function analyzeHistory(config, cwd = process.cwd()) {
-    const [commits, tracked] = await Promise.all([readCommits(config, cwd), trackedFiles(cwd)]);
+    const [commits, tracked] = await Promise.all([readCommits(config, cwd), trackedFiles(cwd, config.excludes)]);
     const now = Date.now();
     const halfLife = Math.max(1, config.historyWindowDays / 2);
     const map = new Map();
@@ -30529,6 +30535,7 @@ const hotspot_1 = __nccwpck_require__(7972);
 const gate_1 = __nccwpck_require__(1956);
 const markdown_1 = __nccwpck_require__(4285);
 const pr_comment_1 = __nccwpck_require__(1914);
+const artifact_1 = __nccwpck_require__(954);
 const engine_1 = __nccwpck_require__(2970);
 async function run() {
     const config = (0, config_1.loadConfig)();
@@ -30546,7 +30553,7 @@ async function run() {
     const [histories, coupling, tracked] = await Promise.all([
         (0, history_1.analyzeHistory)(config, cwd),
         (0, coupling_1.analyzeCoupling)(config, {}, cwd),
-        (0, history_1.trackedFiles)(cwd),
+        (0, history_1.trackedFiles)(cwd, config.excludes),
     ]);
     const { complexityByFile, distanceByFile } = await (0, engine_1.runStaticEngine)(tracked, config, cwd);
     const behavioralOnly = complexityByFile.size === 0;
@@ -30572,6 +30579,10 @@ async function run() {
     catch (err) {
         core.warning(`Could not write job summary: ${err.message}`);
     }
+    // JSON artifact (always, unless opted out)
+    if (config.generateArtifact) {
+        await (0, artifact_1.writeArtifact)(analysis, gate, config, cwd);
+    }
     // PR comment — skipped in "info" mode (job summary only) and on non-PR events
     if (config.comment && pr && config.enforcementLevel !== "info") {
         const body = (0, markdown_1.renderPrComment)(analysis, gate, config, behavioralOnly);
@@ -30592,6 +30603,87 @@ async function run() {
 run().catch((err) => {
     core.setFailed(`hotspot-tool crashed: ${err instanceof Error ? err.message : String(err)}`);
 });
+
+
+/***/ }),
+
+/***/ 954:
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
+
+"use strict";
+
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.writeArtifact = writeArtifact;
+const promises_1 = __nccwpck_require__(1455);
+const path = __importStar(__nccwpck_require__(6760));
+const core = __importStar(__nccwpck_require__(7484));
+async function writeArtifact(analysis, gate, config, cwd) {
+    const report = {
+        generatedAt: new Date().toISOString(),
+        windowDays: analysis.windowDays,
+        enforcementLevel: config.enforcementLevel,
+        totalFilesAnalyzed: analysis.totalFilesAnalyzed,
+        gateStatus: gate.status,
+        hotspots: analysis.hotspots.map((h) => ({
+            path: h.path,
+            percentile: Math.round(h.percentile * 10) / 10,
+            commitCount: h.commitCount,
+            authorCount: h.authorCount,
+            bugfixRatio: Math.round(h.bugfixRatio * 1000) / 1000,
+            complexity: h.complexity,
+            score: Math.round(h.score * 100) / 100,
+        })),
+        touchedHotspots: gate.touchedHotspots.map((h) => h.path),
+        coupling: analysis.coupling.map((c) => ({
+            a: c.a,
+            b: c.b,
+            sharedCommits: c.sharedCommits,
+            degree: Math.round(c.degree * 1000) / 1000,
+        })),
+        distanceViolations: gate.distanceViolations,
+    };
+    const outPath = path.join(cwd, "hotspot-report.json");
+    try {
+        await (0, promises_1.writeFile)(outPath, JSON.stringify(report, null, 2), "utf-8");
+        core.info(`Hotspot report written to ${outPath}`);
+    }
+    catch (err) {
+        core.warning(`Could not write hotspot-report.json: ${err instanceof Error ? err.message : String(err)}`);
+    }
+}
 
 
 /***/ }),
@@ -30816,6 +30908,13 @@ function countBranches(src, lang) {
         case "java":
             patterns.push(/\bif\s*\(/g, /\belse\s+if\s*\(/g, /\bwhile\s*\(/g, /\bfor\s*\(/g, /\bdo\b/g, /\bcase\s+/g, /\bcatch\s*\(/g, /&&/g, /\|\|/g, /\?(?![.?])/g);
             break;
+        case "rust":
+            patterns.push(/\bif\b/g, /\belse\s+if\b/g, /\bwhile\b/g, /\bfor\b/g, /\bloop\b/g, /\bmatch\b/g, /=>/g, // each match arm
+            /&&/g, /\|\|/g);
+            break;
+        case "csharp":
+            patterns.push(/\bif\s*\(/g, /\belse\s+if\s*\(/g, /\bwhile\s*\(/g, /\bfor\s*\(/g, /\bforeach\s*\(/g, /\bdo\b/g, /\bcase\s+/g, /\bcatch\s*\(/g, /&&/g, /\|\|/g, /\?(?![.?])/g);
+            break;
     }
     return patterns.reduce((sum, re) => sum + (src.match(re)?.length ?? 0), 0);
 }
@@ -30824,6 +30923,11 @@ function stripStringsAndComments(src, lang) {
         src = src.replace(/"""[\s\S]*?"""/g, '""');
         src = src.replace(/'''[\s\S]*?'''/g, "''");
         src = src.replace(/#[^\n]*/g, "");
+    }
+    else if (lang === "rust") {
+        src = src.replace(/\/\*[\s\S]*?\*\//g, "");
+        src = src.replace(/\/\/[^\n]*/g, "");
+        src = src.replace(/r#"[\s\S]*?"#/g, '""'); // raw strings
     }
     else {
         src = src.replace(/\/\*[\s\S]*?\*\//g, "");
@@ -30895,6 +30999,8 @@ const EXT_MAP = {
     ".py": "python",
     ".go": "go",
     ".java": "java",
+    ".rs": "rust",
+    ".cs": "csharp",
 };
 function detectLanguage(filePath) {
     const ext = path.extname(filePath).toLowerCase();
@@ -31017,6 +31123,8 @@ function extractSignature(source, lang) {
         case "python": return extractPy(source);
         case "go": return extractGo(source);
         case "java": return extractJava(source);
+        case "rust": return extractRust(source);
+        case "csharp": return extractCS(source);
     }
 }
 function extractTS(src) {
@@ -31099,6 +31207,36 @@ function extractJava(src) {
         rawImports: [...new Set(rawImports)],
         abstractCount: interfaceCount + abstractClsCount,
         concreteCount: Math.max(0, classCount - abstractClsCount),
+    };
+}
+function extractRust(src) {
+    const rawImports = [];
+    // Relative use paths: use crate::, use super::, use self::
+    for (const m of src.matchAll(/\buse\s+((?:crate|super|self)::[\w:]+)/g))
+        rawImports.push(m[1]);
+    const traitCount = (src.match(/\btrait\s+\w/g) ?? []).length;
+    const structCount = (src.match(/\bstruct\s+\w/g) ?? []).length;
+    const enumCount = (src.match(/\benum\s+\w/g) ?? []).length;
+    return {
+        rawImports: [...new Set(rawImports)],
+        abstractCount: traitCount,
+        concreteCount: structCount + enumCount,
+    };
+}
+function extractCS(src) {
+    const rawImports = [];
+    for (const m of src.matchAll(/^using\s+([\w.]+);/gm))
+        rawImports.push(m[1]);
+    const interfaceCount = (src.match(/\binterface\s+\w/g) ?? []).length;
+    const abstractClsCount = (src.match(/\babstract\s+class\s+\w/g) ?? []).length;
+    const classCount = (src.match(/\bclass\s+\w/g) ?? []).length;
+    const structCount = (src.match(/\bstruct\s+\w/g) ?? []).length;
+    const recordCount = (src.match(/\brecord\s+\w/g) ?? []).length;
+    const enumCount = (src.match(/\benum\s+\w/g) ?? []).length;
+    return {
+        rawImports: [...new Set(rawImports)],
+        abstractCount: interfaceCount + abstractClsCount,
+        concreteCount: Math.max(0, classCount - abstractClsCount) + structCount + recordCount + enumCount,
     };
 }
 
@@ -31243,6 +31381,67 @@ function computeMartinMetrics(signatures, trackedSet, moduleDefinition) {
         result.set(file, modMetrics.get(fileToMod.get(file)));
     }
     return result;
+}
+
+
+/***/ }),
+
+/***/ 339:
+/***/ ((__unused_webpack_module, exports) => {
+
+"use strict";
+
+// Minimal glob matcher — handles the patterns teams actually use for excludes:
+//   *        matches any chars except /
+//   **       matches any chars including /
+//   **/      matches zero or more path segments (prefix)
+//   ?        matches single non-slash char
+//
+// No dependency on micromatch or minimatch — intentionally small.
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.isExcluded = isExcluded;
+function globToRegex(pattern) {
+    const p = pattern.replace(/\\/g, "/");
+    let r = "^";
+    let i = 0;
+    while (i < p.length) {
+        const c = p[i];
+        if (c === "*" && p[i + 1] === "*") {
+            if (p[i + 2] === "/") {
+                r += "(?:.+/)?"; // **/ — zero or more path segments with trailing slash
+                i += 3;
+            }
+            else {
+                r += ".*"; // ** at end — anything
+                i += 2;
+            }
+        }
+        else if (c === "*") {
+            r += "[^/]*";
+            i++;
+        }
+        else if (c === "?") {
+            r += "[^/]";
+            i++;
+        }
+        else if (/[.+^${}()|[\]\\]/.test(c)) {
+            r += `\\${c}`;
+            i++;
+        }
+        else {
+            r += c;
+            i++;
+        }
+    }
+    r += "$";
+    return new RegExp(r);
+}
+/** True if filePath (forward-slash normalised) matches any of the glob patterns. */
+function isExcluded(filePath, patterns) {
+    if (patterns.length === 0)
+        return false;
+    const normalized = filePath.replace(/\\/g, "/");
+    return patterns.some((p) => globToRegex(p).test(normalized));
 }
 
 

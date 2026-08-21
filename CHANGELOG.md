@@ -7,6 +7,10 @@ The `v1` tag always points at the latest `1.x` release; pin a specific `vX.Y.Z` 
 
 ---
 
+## v1.2.1 — 2026-08-21
+
+- feat: excludes input, Rust/C# support, JSON artifact output (v1.2.0) (1d5f22a)
+
 ## [1.2.0] — 2026-08-22
 
 ### Added
