@@ -7,6 +7,10 @@ The `v1` tag always points at the latest `1.x` release; pin a specific `vX.Y.Z` 
 
 ---
 
+## v1.1.2 — 2026-08-21
+
+- fix: correct info/warn behaviour, improve degradation logging, add gate tests (4d69ad8)
+
 ## [1.1.1] — 2026-08-21
 
 _Auto-generated commits in this release:_

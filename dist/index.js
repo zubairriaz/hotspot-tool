@@ -30077,17 +30077,18 @@ function evaluateGate(analysis, touchedFiles, config, distanceByFile = new Map()
         reasons.push(`${v.path}: Martin's Distance ${v.distance.toFixed(2)} > distance-max ${config.distanceMax}`);
     }
     const violates = touchedHotspots.length > 0 || distanceViolations.length > 0;
+    // "info" surfaces findings in the job summary without affecting the gate badge.
+    // "warn" shows ⚠️ in the PR comment but never fails CI.
+    // "block" fails CI when violations exist.
     let status;
-    if (!violates || config.enforcementLevel === "info") {
-        status = violates ? "warn" : "pass";
-        if (config.enforcementLevel === "info")
-            status = "pass";
+    if (!violates) {
+        status = "pass";
     }
     else if (config.enforcementLevel === "block") {
         status = "fail";
     }
     else {
-        status = "warn";
+        status = "warn"; // both "info" and "warn" enforcement show warn, never fail
     }
     return { status, touchedHotspots, distanceViolations, reasons };
 }
@@ -30096,12 +30097,46 @@ function evaluateGate(analysis, touchedFiles, config, distanceByFile = new Map()
 /***/ }),
 
 /***/ 5340:
-/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
 "use strict";
 
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.changedFiles = changedFiles;
+const core = __importStar(__nccwpck_require__(7484));
 const exec_1 = __nccwpck_require__(9395);
 /**
  * Files changed between two commits (base...head). Uses the three-dot form so we
@@ -30113,8 +30148,8 @@ async function changedFiles(base, head, cwd = process.cwd()) {
         const out = await (0, exec_1.git)(["diff", "--name-only", `${base}...${head}`], cwd);
         return out.split("\n").map((l) => l.trim()).filter(Boolean);
     }
-    catch {
-        // Base may be unreachable in a shallow clone; fall back to two-dot.
+    catch (err) {
+        core.info(`Three-dot diff failed (${err.message}) — falling back to two-dot diff. Results may include unrelated base-branch changes.`);
         const out = await (0, exec_1.git)(["diff", "--name-only", base, head], cwd);
         return out.split("\n").map((l) => l.trim()).filter(Boolean);
     }
@@ -30497,6 +30532,7 @@ const pr_comment_1 = __nccwpck_require__(1914);
 const engine_1 = __nccwpck_require__(2970);
 async function run() {
     const config = (0, config_1.loadConfig)();
+    core.info(`hotspot-tool config: enforcement=${config.enforcementLevel}, window=${config.historyWindowDays}d, threshold=${config.hotspotThreshold}th-pct, change-freq-min=${config.changeFreqMin}, complexity-min=${config.complexityMin}, module=${config.moduleDefinition}, languages=${Array.isArray(config.languages) ? config.languages.join(",") : config.languages}`);
     // On a runner GITHUB_WORKSPACE is the checked-out repo root; fall back to cwd.
     const cwd = process.env.GITHUB_WORKSPACE || process.cwd();
     if (!(await (0, exec_1.isGitRepo)(cwd))) {
@@ -30536,8 +30572,8 @@ async function run() {
     catch (err) {
         core.warning(`Could not write job summary: ${err.message}`);
     }
-    // PR comment (hero artifact)
-    if (config.comment && pr) {
+    // PR comment — skipped in "info" mode (job summary only) and on non-PR events
+    if (config.comment && pr && config.enforcementLevel !== "info") {
         const body = (0, markdown_1.renderPrComment)(analysis, gate, config, behavioralOnly);
         await (0, pr_comment_1.upsertPrComment)(body, config.githubToken);
     }
@@ -30554,7 +30590,7 @@ async function run() {
     }
 }
 run().catch((err) => {
-    core.setFailed(`hotspot-tool crashed: ${err.message}`);
+    core.setFailed(`hotspot-tool crashed: ${err instanceof Error ? err.message : String(err)}`);
 });
 
 
@@ -30952,6 +30988,10 @@ async function runStaticEngine(trackedFiles, config, cwd) {
             core.debug(`Static engine: skipping ${file} — ${err.message}`);
         }
     }));
+    if (signatures.size === 0) {
+        core.warning(`Static engine: failed to read all ${langMap.size} source file(s) — falling back to behavioral-only mode. Check file permissions in GITHUB_WORKSPACE.`);
+        return { complexityByFile: new Map(), distanceByFile: new Map() };
+    }
     const martinMap = (0, martin_1.computeMartinMetrics)(signatures, trackedFiles, config.moduleDefinition);
     const distanceByFile = new Map();
     for (const [file, m] of martinMap)
