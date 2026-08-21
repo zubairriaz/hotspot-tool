@@ -30494,6 +30494,7 @@ const hotspot_1 = __nccwpck_require__(7972);
 const gate_1 = __nccwpck_require__(1956);
 const markdown_1 = __nccwpck_require__(4285);
 const pr_comment_1 = __nccwpck_require__(1914);
+const engine_1 = __nccwpck_require__(2970);
 async function run() {
     const config = (0, config_1.loadConfig)();
     // On a runner GITHUB_WORKSPACE is the checked-out repo root; fall back to cwd.
@@ -30506,13 +30507,12 @@ async function run() {
         core.warning("Shallow clone detected. Behavioral metrics need full history — set `fetch-depth: 0` on actions/checkout for accurate results.");
     }
     core.info("Analyzing git history (whole repo)...");
-    const [histories, coupling] = await Promise.all([
+    const [histories, coupling, tracked] = await Promise.all([
         (0, history_1.analyzeHistory)(config, cwd),
         (0, coupling_1.analyzeCoupling)(config, {}, cwd),
+        (0, history_1.trackedFiles)(cwd),
     ]);
-    // M2 will populate these from the static engine; behavioral-only for now.
-    const complexityByFile = new Map();
-    const distanceByFile = new Map();
+    const { complexityByFile, distanceByFile } = await (0, engine_1.runStaticEngine)(tracked, config, cwd);
     const behavioralOnly = complexityByFile.size === 0;
     const analysis = (0, hotspot_1.rankHotspots)(histories, config, coupling, complexityByFile);
     core.info(`Found ${analysis.hotspots.length} hotspot(s) across ${analysis.totalFilesAnalyzed} files.`);
@@ -30749,6 +30749,465 @@ async function upsertPrComment(body, token) {
 
 /***/ }),
 
+/***/ 2616:
+/***/ ((__unused_webpack_module, exports) => {
+
+"use strict";
+
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.computeComplexity = computeComplexity;
+/**
+ * Approximate cyclomatic complexity: 1 + number of independent decision points.
+ * Strips strings and comments first to avoid counting keywords inside literals.
+ */
+function computeComplexity(source, lang) {
+    const stripped = stripStringsAndComments(source, lang);
+    return 1 + countBranches(stripped, lang);
+}
+function countBranches(src, lang) {
+    const patterns = [];
+    switch (lang) {
+        case "typescript":
+        case "javascript":
+            patterns.push(/\bif\s*\(/g, /\belse\s+if\s*\(/g, /\bwhile\s*\(/g, /\bfor\s*\(/g, /\bcase\s+[^:]+:/g, /\bcatch\s*\(/g, /&&/g, /\|\|/g, /\?\?/g, /\?(?![.?])/g);
+            break;
+        case "python":
+            patterns.push(/\bif\b/g, /\belif\b/g, /\bwhile\b/g, /\bfor\b/g, /\bexcept\b/g, /\band\b/g, /\bor\b/g);
+            break;
+        case "go":
+            patterns.push(/\bif\b/g, /\bfor\b/g, /\bcase\b/g, /&&/g, /\|\|/g);
+            break;
+        case "java":
+            patterns.push(/\bif\s*\(/g, /\belse\s+if\s*\(/g, /\bwhile\s*\(/g, /\bfor\s*\(/g, /\bdo\b/g, /\bcase\s+/g, /\bcatch\s*\(/g, /&&/g, /\|\|/g, /\?(?![.?])/g);
+            break;
+    }
+    return patterns.reduce((sum, re) => sum + (src.match(re)?.length ?? 0), 0);
+}
+function stripStringsAndComments(src, lang) {
+    if (lang === "python") {
+        src = src.replace(/"""[\s\S]*?"""/g, '""');
+        src = src.replace(/'''[\s\S]*?'''/g, "''");
+        src = src.replace(/#[^\n]*/g, "");
+    }
+    else {
+        src = src.replace(/\/\*[\s\S]*?\*\//g, "");
+        src = src.replace(/\/\/[^\n]*/g, "");
+    }
+    // Remove string literals (simplified — does not handle all escape sequences)
+    src = src.replace(/"(?:[^"\\]|\\.)*"/g, '""');
+    src = src.replace(/'(?:[^'\\]|\\.)*'/g, "''");
+    if (lang === "typescript" || lang === "javascript") {
+        src = src.replace(/`(?:[^`\\]|\\.)*`/g, "``");
+    }
+    return src;
+}
+
+
+/***/ }),
+
+/***/ 3491:
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
+
+"use strict";
+
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.detectLanguage = detectLanguage;
+exports.supportedFiles = supportedFiles;
+const path = __importStar(__nccwpck_require__(6760));
+const EXT_MAP = {
+    ".ts": "typescript",
+    ".tsx": "typescript",
+    ".mts": "typescript",
+    ".cts": "typescript",
+    ".js": "javascript",
+    ".jsx": "javascript",
+    ".mjs": "javascript",
+    ".cjs": "javascript",
+    ".py": "python",
+    ".go": "go",
+    ".java": "java",
+};
+function detectLanguage(filePath) {
+    const ext = path.extname(filePath).toLowerCase();
+    return EXT_MAP[ext] ?? null;
+}
+/** Filter tracked files to those with a supported language, respecting config.languages. */
+function supportedFiles(files, languages) {
+    const result = new Map();
+    for (const f of files) {
+        const lang = detectLanguage(f);
+        if (!lang)
+            continue;
+        if (languages !== "auto" && !languages.includes(lang))
+            continue;
+        result.set(f, lang);
+    }
+    return result;
+}
+
+
+/***/ }),
+
+/***/ 2970:
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
+
+"use strict";
+
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.runStaticEngine = runStaticEngine;
+const promises_1 = __nccwpck_require__(1455);
+const path = __importStar(__nccwpck_require__(6760));
+const core = __importStar(__nccwpck_require__(7484));
+const detect_1 = __nccwpck_require__(3491);
+const extract_1 = __nccwpck_require__(6383);
+const complexity_1 = __nccwpck_require__(2616);
+const martin_1 = __nccwpck_require__(1863);
+/**
+ * Run the static analysis engine over all tracked files.
+ * Returns complexity and Martin's Distance keyed by git-relative file path.
+ * Fails gracefully — any unreadable file is skipped with a debug log.
+ */
+async function runStaticEngine(trackedFiles, config, cwd) {
+    const langMap = (0, detect_1.supportedFiles)(trackedFiles, config.languages);
+    if (langMap.size === 0) {
+        core.info("Static engine: no supported source files found — skipping.");
+        return { complexityByFile: new Map(), distanceByFile: new Map() };
+    }
+    core.info(`Static engine: reading ${langMap.size} source file(s).`);
+    const signatures = new Map();
+    const complexityByFile = new Map();
+    await Promise.all(Array.from(langMap.entries()).map(async ([file, lang]) => {
+        try {
+            const source = await (0, promises_1.readFile)(path.join(cwd, file), "utf-8");
+            signatures.set(file, { sig: (0, extract_1.extractSignature)(source, lang), lang });
+            complexityByFile.set(file, (0, complexity_1.computeComplexity)(source, lang));
+        }
+        catch (err) {
+            core.debug(`Static engine: skipping ${file} — ${err.message}`);
+        }
+    }));
+    const martinMap = (0, martin_1.computeMartinMetrics)(signatures, trackedFiles, config.moduleDefinition);
+    const distanceByFile = new Map();
+    for (const [file, m] of martinMap)
+        distanceByFile.set(file, m.distance);
+    core.info(`Static engine: complexity for ${complexityByFile.size} file(s), Martin's Distance for ${distanceByFile.size} file(s).`);
+    return { complexityByFile, distanceByFile };
+}
+
+
+/***/ }),
+
+/***/ 6383:
+/***/ ((__unused_webpack_module, exports) => {
+
+"use strict";
+
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.extractSignature = extractSignature;
+function extractSignature(source, lang) {
+    switch (lang) {
+        case "typescript": return extractTS(source);
+        case "javascript": return extractJS(source);
+        case "python": return extractPy(source);
+        case "go": return extractGo(source);
+        case "java": return extractJava(source);
+    }
+}
+function extractTS(src) {
+    const rawImports = [];
+    // Static imports: from 'path'
+    for (const m of src.matchAll(/\bfrom\s+['"]([^'"]+)['"]/g))
+        rawImports.push(m[1]);
+    // Side-effect imports: import 'path'
+    for (const m of src.matchAll(/\bimport\s+['"]([^'"]+)['"]/g))
+        rawImports.push(m[1]);
+    // Dynamic: import('path') and require('path')
+    for (const m of src.matchAll(/(?:\bimport\s*\(|require\s*\()['"]([^'"]+)['"]/g))
+        rawImports.push(m[1]);
+    const interfaceCount = (src.match(/\binterface\s+\w/g) ?? []).length;
+    const abstractClsCount = (src.match(/\babstract\s+class\s+\w/g) ?? []).length;
+    const typeAliasCount = (src.match(/\btype\s+\w+\s*(?:<[^>]*>)?\s*=/g) ?? []).length;
+    const classCount = (src.match(/\bclass\s+\w/g) ?? []).length;
+    return {
+        rawImports: [...new Set(rawImports)],
+        abstractCount: interfaceCount + abstractClsCount + typeAliasCount,
+        concreteCount: Math.max(0, classCount - abstractClsCount),
+    };
+}
+function extractJS(src) {
+    const rawImports = [];
+    for (const m of src.matchAll(/\bfrom\s+['"]([^'"]+)['"]/g))
+        rawImports.push(m[1]);
+    for (const m of src.matchAll(/\bimport\s+['"]([^'"]+)['"]/g))
+        rawImports.push(m[1]);
+    for (const m of src.matchAll(/(?:\bimport\s*\(|require\s*\()['"]([^'"]+)['"]/g))
+        rawImports.push(m[1]);
+    const classCount = (src.match(/\bclass\s+\w/g) ?? []).length;
+    return { rawImports: [...new Set(rawImports)], abstractCount: 0, concreteCount: classCount };
+}
+function extractPy(src) {
+    const rawImports = [];
+    // Relative imports: from .module import foo
+    for (const m of src.matchAll(/^from\s+(\.+[\w.]*)\s+import/gm))
+        rawImports.push(m[1]);
+    // Relative import: import .module
+    for (const m of src.matchAll(/^import\s+(\.+[\w.]*)/gm))
+        rawImports.push(m[1]);
+    // Abstract: inherits ABC/Protocol, or uses @abstractmethod
+    const abstractClsCount = (src.match(/^\s*class\s+\w+\s*\([^)]*(?:ABC|Protocol|ABCMeta)[^)]*\)/gm) ?? []).length;
+    const abstractMethodCount = (src.match(/@abstractmethod/g) ?? []).length;
+    const classCount = (src.match(/^\s*class\s+\w/gm) ?? []).length;
+    return {
+        rawImports: [...new Set(rawImports)],
+        abstractCount: abstractClsCount + abstractMethodCount,
+        concreteCount: Math.max(0, classCount - abstractClsCount),
+    };
+}
+function extractGo(src) {
+    const rawImports = [];
+    // Import block: import ( "pkg" )
+    const block = src.match(/\bimport\s*\(([\s\S]*?)\)/);
+    if (block) {
+        for (const m of block[1].matchAll(/"([^"]+)"/g))
+            rawImports.push(m[1]);
+    }
+    // Single import: import "pkg"
+    for (const m of src.matchAll(/^import\s+"([^"]+)"/gm))
+        rawImports.push(m[1]);
+    const interfaceCount = (src.match(/\btype\s+\w+\s+interface\s*\{/g) ?? []).length;
+    const structCount = (src.match(/\btype\s+\w+\s+struct\s*\{/g) ?? []).length;
+    return {
+        rawImports: [...new Set(rawImports)],
+        abstractCount: interfaceCount,
+        concreteCount: structCount,
+    };
+}
+function extractJava(src) {
+    const rawImports = [];
+    for (const m of src.matchAll(/^import\s+([\w.]+);/gm))
+        rawImports.push(m[1]);
+    const interfaceCount = (src.match(/\binterface\s+\w/g) ?? []).length;
+    const abstractClsCount = (src.match(/\babstract\s+class\s+\w/g) ?? []).length;
+    const classCount = (src.match(/\bclass\s+\w/g) ?? []).length;
+    return {
+        rawImports: [...new Set(rawImports)],
+        abstractCount: interfaceCount + abstractClsCount,
+        concreteCount: Math.max(0, classCount - abstractClsCount),
+    };
+}
+
+
+/***/ }),
+
+/***/ 1863:
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
+
+"use strict";
+
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.computeMartinMetrics = computeMartinMetrics;
+const path = __importStar(__nccwpck_require__(6760));
+/** Group key for a file given the module-definition setting. */
+function moduleKey(filePath, def) {
+    if (def === "file")
+        return filePath;
+    if (def === "directory")
+        return path.posix.dirname(filePath) || ".";
+    return "__workspace__";
+}
+/**
+ * Resolve a raw import specifier to the path of a tracked project file,
+ * or null for external packages / unresolvable references.
+ */
+function resolveImport(spec, fromFile, trackedSet, lang) {
+    if (lang === "typescript" || lang === "javascript") {
+        if (!spec.startsWith("."))
+            return null;
+        const dir = path.posix.dirname(fromFile);
+        const base = path.posix.normalize(path.posix.join(dir, spec));
+        const candidates = [
+            base,
+            ...([".ts", ".tsx", ".mts", ".js", ".jsx", ".mjs"].map((e) => base + e)),
+            ...([".ts", ".tsx", ".js", ".jsx"].map((e) => `${base}/index${e}`)),
+        ];
+        for (const c of candidates)
+            if (trackedSet.has(c))
+                return c;
+        return null;
+    }
+    if (lang === "python") {
+        if (!spec.startsWith("."))
+            return null;
+        const dots = spec.match(/^\.+/)?.[0].length ?? 0;
+        const rest = spec.slice(dots).replace(/\./g, "/");
+        let dir = path.posix.dirname(fromFile);
+        for (let i = 1; i < dots; i++)
+            dir = path.posix.dirname(dir);
+        const base = rest ? path.posix.join(dir, rest) : dir;
+        const candidates = [`${base}.py`, `${base}/__init__.py`];
+        for (const c of candidates)
+            if (trackedSet.has(c))
+                return c;
+        return null;
+    }
+    // Go and Java use module/package paths that require go.mod / classpath to resolve.
+    return null;
+}
+function computeMartinMetrics(signatures, trackedSet, moduleDefinition) {
+    // Map each file to its module key
+    const fileToMod = new Map();
+    for (const [file] of signatures) {
+        fileToMod.set(file, moduleKey(file, moduleDefinition));
+    }
+    // Aggregate abstractness counts per module
+    const modAbstract = new Map();
+    const modConcrete = new Map();
+    for (const [file, { sig }] of signatures) {
+        const mod = fileToMod.get(file);
+        modAbstract.set(mod, (modAbstract.get(mod) ?? 0) + sig.abstractCount);
+        modConcrete.set(mod, (modConcrete.get(mod) ?? 0) + sig.concreteCount);
+    }
+    // Build inter-module dependency edges
+    const efferent = new Map(); // modules this module imports
+    const afferent = new Map(); // modules that import this module
+    for (const mod of modAbstract.keys()) {
+        efferent.set(mod, new Set());
+        afferent.set(mod, new Set());
+    }
+    for (const [file, { sig, lang }] of signatures) {
+        const fromMod = fileToMod.get(file);
+        for (const spec of sig.rawImports) {
+            const resolved = resolveImport(spec, file, trackedSet, lang);
+            if (!resolved)
+                continue;
+            const toMod = fileToMod.get(resolved);
+            if (!toMod || toMod === fromMod)
+                continue;
+            efferent.get(fromMod).add(toMod);
+            afferent.get(toMod).add(fromMod);
+        }
+    }
+    // Compute A, I, D per module
+    const modMetrics = new Map();
+    for (const mod of modAbstract.keys()) {
+        const abs = modAbstract.get(mod) ?? 0;
+        const con = modConcrete.get(mod) ?? 0;
+        const A = abs + con > 0 ? abs / (abs + con) : 0;
+        const Ce = efferent.get(mod).size;
+        const Ca = afferent.get(mod).size;
+        const I = Ce + Ca > 0 ? Ce / (Ce + Ca) : 0;
+        modMetrics.set(mod, { abstractness: A, instability: I, distance: Math.abs(A + I - 1) });
+    }
+    // Project module metrics back onto individual files
+    const result = new Map();
+    for (const [file] of signatures) {
+        result.set(file, modMetrics.get(fileToMod.get(file)));
+    }
+    return result;
+}
+
+
+/***/ }),
+
 /***/ 2613:
 /***/ ((module) => {
 
@@ -30874,6 +31333,22 @@ module.exports = require("node:crypto");
 
 "use strict";
 module.exports = require("node:events");
+
+/***/ }),
+
+/***/ 1455:
+/***/ ((module) => {
+
+"use strict";
+module.exports = require("node:fs/promises");
+
+/***/ }),
+
+/***/ 6760:
+/***/ ((module) => {
+
+"use strict";
+module.exports = require("node:path");
 
 /***/ }),
 

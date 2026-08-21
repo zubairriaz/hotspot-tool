@@ -4,6 +4,10 @@ All notable versions of hotspot-tool. This file is the maintained **package vers
 
 The `v1` tag always points at the latest `1.x` release; pin a specific `vX.Y.Z` tag for reproducibility.
 
+## v1.1.1 — 2026-08-21
+
+- Merge branch 'main' of https://github.com/zubairriaz/hotspot-tool (01d23b2)
+
 ## v1.0.3 — 2026-08-21
 
 - Merge branch 'main' of https://github.com/zubairriaz/hotspot-tool (a63f782)
