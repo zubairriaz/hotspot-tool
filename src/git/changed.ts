@@ -1,3 +1,4 @@
+import * as core from "@actions/core";
 import { git } from "./exec";
 
 /**
@@ -9,8 +10,8 @@ export async function changedFiles(base: string, head: string, cwd = process.cwd
   try {
     const out = await git(["diff", "--name-only", `${base}...${head}`], cwd);
     return out.split("\n").map((l) => l.trim()).filter(Boolean);
-  } catch {
-    // Base may be unreachable in a shallow clone; fall back to two-dot.
+  } catch (err) {
+    core.info(`Three-dot diff failed (${(err as Error).message}) — falling back to two-dot diff. Results may include unrelated base-branch changes.`);
     const out = await git(["diff", "--name-only", base, head], cwd);
     return out.split("\n").map((l) => l.trim()).filter(Boolean);
   }

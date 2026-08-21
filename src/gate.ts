@@ -49,14 +49,16 @@ export function evaluateGate(
 
   const violates = touchedHotspots.length > 0 || distanceViolations.length > 0;
 
+  // "info" surfaces findings in the job summary without affecting the gate badge.
+  // "warn" shows ⚠️ in the PR comment but never fails CI.
+  // "block" fails CI when violations exist.
   let status: GateStatus;
-  if (!violates || config.enforcementLevel === "info") {
-    status = violates ? "warn" : "pass";
-    if (config.enforcementLevel === "info") status = "pass";
+  if (!violates) {
+    status = "pass";
   } else if (config.enforcementLevel === "block") {
     status = "fail";
   } else {
-    status = "warn";
+    status = "warn"; // both "info" and "warn" enforcement show warn, never fail
   }
 
   return { status, touchedHotspots, distanceViolations, reasons };

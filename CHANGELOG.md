@@ -1,31 +1,89 @@
 # Changelog
 
-All notable versions of hotspot-tool. This file is the maintained **package version list** — the release workflow prepends a new entry on every push to `main`.
+All notable changes to hotspot-tool are documented here.
+Versions follow [Semantic Versioning](https://semver.org/).
 
 The `v1` tag always points at the latest `1.x` release; pin a specific `vX.Y.Z` tag for reproducibility.
 
-## v1.1.1 — 2026-08-21
+---
 
+## [1.1.1] — 2026-08-21
+
+_Auto-generated commits in this release:_
 - Merge branch 'main' of https://github.com/zubairriaz/hotspot-tool (01d23b2)
 
-## v1.0.3 — 2026-08-21
+### Fixed
 
-- Merge branch 'main' of https://github.com/zubairriaz/hotspot-tool (a63f782)
+- **`info` enforcement level now skips the PR comment** (`src/main.ts`).
+  Previously `info` and `warn` were identical — both posted a sticky PR comment.
+  `info` now writes to the job summary only, matching the documented "report only" behaviour.
 
-## v1.0.2 — 2026-08-21
+- **`info` gate status now reflects actual findings** (`src/gate.ts`).
+  When violations exist under `info` enforcement, the gate now returns `"warn"` (⚠️ badge
+  in the job summary) instead of `"pass"` (✅). The check still never fails CI.
+  The status logic was simplified from a confusing two-step overwrite into a clean
+  three-branch conditional.
 
-- chore: use node24 action runtime (node20 deprecated) (b699684)
+- **Three-dot diff fallback is now logged** (`src/git/changed.ts`).
+  The silent `catch {}` on the `base...head` diff is replaced with a `core.info` message
+  that names the original error and warns that the two-dot fallback may include
+  unrelated base-branch changes. Useful when debugging shallow-clone behaviour.
 
-## v1.0.1 — 2026-08-21
+- **Static engine degradation is now a warning** (`src/static/engine.ts`).
+  If every file read fails (e.g. bad `GITHUB_WORKSPACE` permissions), the engine
+  previously logged "complexity for 0 file(s)" with no explanation. It now emits a
+  `core.warning` explaining the fallback and what to check.
 
-- ci: add release automation + version list (publishes on every push to main) (c0d604c)
+- **Crash handler uses safe error serialisation** (`src/main.ts`).
+  `(err as Error).message` replaced with `err instanceof Error ? err.message : String(err)`
+  so non-Error throws (strings, numbers) don't silently produce `undefined` in the failure
+  message.
 
-## v1.0.0 — 2026-08-21
+- **Config logged at startup** (`src/main.ts`).
+  Effective configuration is now printed to the CI log on every run, making it easier
+  to verify that action inputs were parsed correctly.
 
-Initial release (Milestones 0 + 1).
+### Tests
 
-- Whole-repo behavioral engine from git history: recency-weighted change frequency, author count, bug-fix ratio, change coupling.
-- Rank-product hotspot scoring with percentile cutoff + absolute floors.
-- Enforcement `info` / `warn` / `block`, gating on `touched ∩ hotspots`; opt-in `distance-max` gate.
-- Sticky PR comment + job summary.
-- Static engine (complexity / Martin's metrics) not yet implemented — ranking is behavioral-only.
+- Added `test/gate.test.ts` — 16 new tests covering all enforcement levels, PR-scope
+  isolation, Martin's Distance gate edge cases (null/boundary/untouched files), reason
+  string content, and combined hotspot + distance violations.
+
+---
+
+## [1.1.0] — 2026-08-21
+
+### Added
+
+- **M2 static analysis engine** (`src/static/`).
+  Regex-based static engine across TypeScript, JavaScript, Python, Go, and Java.
+  Computes cyclomatic complexity and Martin's Distance D = |A + I − 1| per file.
+  Both `complexityByFile` and `distanceByFile` maps — previously empty placeholders —
+  are now fully populated on every run.
+
+  - `src/static/detect.ts` — language detection from file extension
+  - `src/static/extract.ts` — per-language import and abstractness extraction
+  - `src/static/complexity.ts` — cyclomatic complexity via branch counting
+  - `src/static/martin.ts` — Martin's A, I, D with inter-module dependency graph;
+    supports `file`, `directory`, and `workspace` module definitions
+  - `src/static/engine.ts` — main entry: reads files in parallel, returns
+    `{ complexityByFile, distanceByFile }`
+
+- **16 static engine tests** (`test/static.test.ts`).
+
+### Changed
+
+- `src/main.ts` — wires `runStaticEngine` into the main pipeline; `trackedFiles`
+  called once and shared across history analysis and the static engine.
+
+- **README updated** — added plain-English explanations of all metrics including
+  Martin's Distance formula, the two failure zones (Zone of Pain / Zone of Uselessness),
+  and a full description of the token flow.
+
+---
+
+## [1.0.2] — prior release
+
+Initial public release with behavioral engine (git history analysis):
+change frequency, recency weighting, author count, bug-fix ratio,
+change coupling, and PR-scoped gating.

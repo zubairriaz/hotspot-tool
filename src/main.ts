@@ -13,6 +13,9 @@ import { runStaticEngine } from "./static/engine";
 
 async function run(): Promise<void> {
   const config = loadConfig();
+  core.info(
+    `hotspot-tool config: enforcement=${config.enforcementLevel}, window=${config.historyWindowDays}d, threshold=${config.hotspotThreshold}th-pct, change-freq-min=${config.changeFreqMin}, complexity-min=${config.complexityMin}, module=${config.moduleDefinition}, languages=${Array.isArray(config.languages) ? config.languages.join(",") : config.languages}`,
+  );
   // On a runner GITHUB_WORKSPACE is the checked-out repo root; fall back to cwd.
   const cwd = process.env.GITHUB_WORKSPACE || process.cwd();
 
@@ -62,8 +65,8 @@ async function run(): Promise<void> {
     core.warning(`Could not write job summary: ${(err as Error).message}`);
   }
 
-  // PR comment (hero artifact)
-  if (config.comment && pr) {
+  // PR comment — skipped in "info" mode (job summary only) and on non-PR events
+  if (config.comment && pr && config.enforcementLevel !== "info") {
     const body = renderPrComment(analysis, gate, config, behavioralOnly);
     await upsertPrComment(body, config.githubToken);
   }
@@ -84,5 +87,5 @@ async function run(): Promise<void> {
 }
 
 run().catch((err) => {
-  core.setFailed(`hotspot-tool crashed: ${(err as Error).message}`);
+  core.setFailed(`hotspot-tool crashed: ${err instanceof Error ? err.message : String(err)}`);
 });

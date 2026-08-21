@@ -44,6 +44,13 @@ export async function runStaticEngine(
     }),
   );
 
+  if (signatures.size === 0) {
+    core.warning(
+      `Static engine: failed to read all ${langMap.size} source file(s) — falling back to behavioral-only mode. Check file permissions in GITHUB_WORKSPACE.`,
+    );
+    return { complexityByFile: new Map(), distanceByFile: new Map() };
+  }
+
   const martinMap = computeMartinMetrics(signatures, trackedFiles, config.moduleDefinition);
   const distanceByFile = new Map<string, number>();
   for (const [file, m] of martinMap) distanceByFile.set(file, m.distance);
