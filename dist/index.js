@@ -31051,32 +31051,32 @@ async function upsertInlineComments(comments, token) {
     for (const c of comments) {
         const body = `${exports.INLINE_MARKER}\n${c.body}`;
         let ok = false;
-        // Prefer file-level comment (not tied to a specific diff line)
+        // Prefer line 1 — appears inline with the code in the diff, easy to spot and resolve
         try {
-            await octokit.request("POST /repos/{owner}/{repo}/pulls/{pull_number}/comments", {
+            await octokit.rest.pulls.createReviewComment({
                 owner,
                 repo,
                 pull_number,
                 commit_id,
                 path: c.path,
-                subject_type: "file",
+                line: 1,
+                side: "RIGHT",
                 body,
             });
             ok = true;
         }
         catch {
-            // fall through to line-based fallback
+            // line 1 not in diff — fall back to file-level comment (appears at file header)
         }
         if (!ok) {
             try {
-                await octokit.rest.pulls.createReviewComment({
+                await octokit.request("POST /repos/{owner}/{repo}/pulls/{pull_number}/comments", {
                     owner,
                     repo,
                     pull_number,
                     commit_id,
                     path: c.path,
-                    line: 1,
-                    side: "RIGHT",
+                    subject_type: "file",
                     body,
                 });
                 ok = true;
