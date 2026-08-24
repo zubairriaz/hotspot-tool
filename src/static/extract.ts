@@ -230,7 +230,8 @@ function extractRuby(src: string): FileSignature {
 
 function extractCpp(src: string): FileSignature {
   const rawImports: string[] = [];
-  for (const m of src.matchAll(/^#include\s+["<]([^">]+)[">]/gm))
+  // Only quoted includes are project-relative; angle-bracket ones are system headers
+  for (const m of src.matchAll(/^#include\s+"([^"]+)"/gm))
     rawImports.push(m[1]!);
 
   const classCount    = (src.match(/\bclass\s+\w/g) ?? []).length;

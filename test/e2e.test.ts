@@ -298,7 +298,7 @@ describe("end-to-end", () => {
     const histories = await analyzeHistory(c, dir);
     const analysis = rankHotspots(histories, c);
     // quiet.ts is not a hotspot, but D=0.99 exceeds distanceMax
-    const distanceByFile = new Map([["src/quiet.ts", 0.99]]);
+    const distanceByFile = new Map([["src/quiet.ts", { distance: 0.99, abstractness: 0, instability: 0 }]]);
     const gate = evaluateGate(analysis, ["src/quiet.ts"], c, distanceByFile);
     assert.equal(gate.distanceViolations.length, 1);
     assert.equal(gate.distanceViolations[0]!.path, "src/quiet.ts");
@@ -321,8 +321,10 @@ describe("end-to-end", () => {
     const tracked = await trackedFiles(dir, c.excludes);
     const { distanceByFile } = await runStaticEngine(tracked, c, dir);
     assert.ok(distanceByFile.size > 0, "should compute D for at least one file");
-    for (const [file, d] of distanceByFile) {
-      assert.ok(d >= 0 && d <= 1, `${file}: D=${d.toFixed(3)} is not in [0,1]`);
+    for (const [file, m] of distanceByFile) {
+      assert.ok(m.distance >= 0 && m.distance <= 1, `${file}: D=${m.distance.toFixed(3)} is not in [0,1]`);
+      assert.ok(m.abstractness >= 0 && m.abstractness <= 1, `${file}: A=${m.abstractness.toFixed(3)} is not in [0,1]`);
+      assert.ok(m.instability >= 0 && m.instability <= 1, `${file}: I=${m.instability.toFixed(3)} is not in [0,1]`);
     }
   });
 

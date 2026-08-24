@@ -30071,10 +30071,11 @@ function evaluateGate(analysis, touchedFiles, config, distanceByFile = new Map()
     const touchedHotspots = analysis.hotspots.filter((h) => touched.has(h.path));
     const distanceViolations = [];
     if (config.distanceMax !== null) {
-        for (const path of touchedFiles) {
-            const d = distanceByFile.get(path);
-            if (d !== undefined && d > config.distanceMax)
-                distanceViolations.push({ path, distance: d });
+        for (const p of touchedFiles) {
+            const m = distanceByFile.get(p);
+            if (m !== undefined && m.distance > config.distanceMax) {
+                distanceViolations.push({ path: p, abstractness: m.abstractness, instability: m.instability, distance: m.distance });
+            }
         }
     }
     const reasons = [];
@@ -30083,7 +30084,7 @@ function evaluateGate(analysis, touchedFiles, config, distanceByFile = new Map()
         reasons.push(`${h.path}: hotspot (${h.percentile.toFixed(0)}th percentile, ${h.commitCount} commits${cx}, ${h.authorCount} authors)`);
     }
     for (const v of distanceViolations) {
-        reasons.push(`${v.path}: Martin's Distance ${v.distance.toFixed(2)} > distance-max ${config.distanceMax}`);
+        reasons.push(`${v.path}: Martin's Distance ${v.distance.toFixed(2)} > distance-max ${config.distanceMax} (A=${v.abstractness.toFixed(2)}, I=${v.instability.toFixed(2)})`);
     }
     const violates = touchedHotspots.length > 0 || distanceViolations.length > 0;
     // "info" surfaces findings in the job summary without affecting the gate badge.
@@ -30621,9 +30622,16 @@ async function run() {
                 `Add the "${config.acknowledgeLabel}" label to downgrade to warn while you plan the fix.`, { file: h.path, title: "🔥 Hotspot" });
         }
         for (const v of gate.distanceViolations) {
-            core.error(`Martin's Distance D=${v.distance.toFixed(2)} exceeds distance-max (${gateConfig.distanceMax}). ` +
-                `Zone of Pain if stable+concrete: extract an interface. ` +
-                `Zone of Uselessness if abstract+unstable: freeze the API.`, { file: v.path, title: "📐 Distance violation" });
+            const A = v.abstractness.toFixed(2);
+            const I = v.instability.toFixed(2);
+            const isZonePain = v.abstractness < 0.5 && v.instability < 0.5;
+            const isZoneUseless = v.abstractness >= 0.5 && v.instability >= 0.5;
+            const zone = isZonePain
+                ? `Zone of Pain (A=${A}, I=${I}) — stable and concrete. Extract an interface so callers depend on the abstraction, not this implementation.`
+                : isZoneUseless
+                    ? `Zone of Uselessness (A=${A}, I=${I}) — abstract but unstable. Freeze the API contract and push volatile behaviour into concrete implementations.`
+                    : `Off the Main Sequence (A=${A}, I=${I}). Add abstractions or reduce coupling to bring A + I closer to 1.`;
+            core.error(`Martin's Distance D=${v.distance.toFixed(2)} exceeds distance-max (${gateConfig.distanceMax}). ${zone}`, { file: v.path, title: "📐 Distance violation" });
         }
     }
     if (gate.status === "fail") {
@@ -30747,6 +30755,13 @@ function complexityCell(h) {
         return `**${h.complexity}** 🟡`;
     return `${h.complexity}`;
 }
+function zoneLabel(v) {
+    if (v.abstractness < 0.5 && v.instability < 0.5)
+        return { badge: "🔥 Zone of Pain", zone: "pain" };
+    if (v.abstractness >= 0.5 && v.instability >= 0.5)
+        return { badge: "🌫️ Zone of Uselessness", zone: "useless" };
+    return { badge: "⚠️ Off Main Sequence", zone: "other" };
+}
 function whatToDo(hotspots, distanceViolations, distanceMax, acknowledged) {
     const lines = [];
     lines.push("<details><summary>🛠 What should I do?</summary>");
@@ -30777,12 +30792,16 @@ function whatToDo(hotspots, distanceViolations, distanceMax, acknowledged) {
     if (distanceViolations.length > 0) {
         lines.push("**Martin's Distance violations — architectural guidance**");
         lines.push("");
-        lines.push("Martin's Distance D = |Abstractness + Instability − 1|. A value near 1 means the file sits in a danger zone:");
-        lines.push("- **Zone of Pain** (D≈1, stable + concrete): many files depend on this one, but it has no abstractions. Every change here ripples everywhere. Fix: extract an interface or trait that dependents rely on instead of the concrete implementation.");
-        lines.push("- **Zone of Uselessness** (D≈1, unstable + abstract): lots of abstractions that keep changing. Fix: stabilise the API — freeze the interface and push volatility into implementations.");
+        lines.push("D = |A + I − 1|. Healthy modules sit on the Main Sequence where A + I ≈ 1.");
         lines.push("");
         for (const v of distanceViolations) {
-            lines.push(`- \`${v.path}\` — D \`${v.distance.toFixed(2)}\` > \`distance-max ${distanceMax}\`. Introduce an abstraction layer or reduce the number of direct dependents.`);
+            const { badge, zone } = zoneLabel(v);
+            const fix = zone === "pain"
+                ? `Stable (I=${v.instability.toFixed(2)}) but fully concrete (A=${v.abstractness.toFixed(2)}). Extract an interface so callers depend on the abstraction, not this implementation.`
+                : zone === "useless"
+                    ? `Abstract (A=${v.abstractness.toFixed(2)}) but unstable (I=${v.instability.toFixed(2)}). Freeze the API contract; push volatile behaviour into concrete implementations.`
+                    : `A=${v.abstractness.toFixed(2)}, I=${v.instability.toFixed(2)}: add abstractions or reduce coupling to bring A + I closer to 1.`;
+            lines.push(`- \`${v.path}\` — ${badge}, D \`${v.distance.toFixed(2)}\` > \`${distanceMax}\`. ${fix}`);
         }
         lines.push("");
     }
@@ -30817,10 +30836,11 @@ function renderPrComment(analysis, gate, config, behavioralOnly, acknowledged = 
         if (gate.distanceViolations.length > 0) {
             lines.push("### Martin's Distance violations");
             lines.push("");
-            lines.push("| File | D score | Threshold |");
-            lines.push("|---|---|---|");
+            lines.push("| File | A | I | D | Zone | Threshold |");
+            lines.push("|---|---|---|---|---|---|");
             for (const v of gate.distanceViolations) {
-                lines.push(`| \`${v.path}\` | \`${v.distance.toFixed(2)}\` | \`${config.distanceMax}\` |`);
+                const { badge } = zoneLabel(v);
+                lines.push(`| \`${v.path}\` | ${v.abstractness.toFixed(2)} | ${v.instability.toFixed(2)} | \`${v.distance.toFixed(2)}\` | ${badge} | \`${config.distanceMax}\` |`);
             }
             lines.push("");
         }
@@ -30877,10 +30897,11 @@ function renderJobSummary(analysis, gate, config) {
     }
     if (gate.distanceViolations.length > 0) {
         lines.push("## Martin's Distance violations");
-        lines.push("| File | D score | Threshold |");
-        lines.push("|---|---|---|");
+        lines.push("| File | A | I | D | Zone | Threshold |");
+        lines.push("|---|---|---|---|---|---|");
         for (const v of gate.distanceViolations) {
-            lines.push(`| \`${v.path}\` | \`${v.distance.toFixed(2)}\` | \`${config.distanceMax}\` |`);
+            const { badge } = zoneLabel(v);
+            lines.push(`| \`${v.path}\` | ${v.abstractness.toFixed(2)} | ${v.instability.toFixed(2)} | \`${v.distance.toFixed(2)}\` | ${badge} | \`${config.distanceMax}\` |`);
         }
         lines.push("");
     }
@@ -31253,10 +31274,7 @@ async function runStaticEngine(trackedFiles, config, cwd) {
         core.warning(`Static engine: failed to read all ${langMap.size} source file(s) — falling back to behavioral-only mode. Check file permissions in GITHUB_WORKSPACE.`);
         return { complexityByFile: new Map(), distanceByFile: new Map() };
     }
-    const martinMap = (0, martin_1.computeMartinMetrics)(signatures, trackedFiles, config.moduleDefinition);
-    const distanceByFile = new Map();
-    for (const [file, m] of martinMap)
-        distanceByFile.set(file, m.distance);
+    const distanceByFile = (0, martin_1.computeMartinMetrics)(signatures, trackedFiles, config.moduleDefinition);
     core.info(`Static engine: complexity for ${complexityByFile.size} file(s), Martin's Distance for ${distanceByFile.size} file(s).`);
     return { complexityByFile, distanceByFile };
 }
@@ -31462,7 +31480,8 @@ function extractRuby(src) {
 }
 function extractCpp(src) {
     const rawImports = [];
-    for (const m of src.matchAll(/^#include\s+["<]([^">]+)[">]/gm))
+    // Only quoted includes are project-relative; angle-bracket ones are system headers
+    for (const m of src.matchAll(/^#include\s+"([^"]+)"/gm))
         rawImports.push(m[1]);
     const classCount = (src.match(/\bclass\s+\w/g) ?? []).length;
     const structCount = (src.match(/\bstruct\s+\w/g) ?? []).length;
@@ -31578,7 +31597,52 @@ function resolveImport(spec, fromFile, trackedSet, lang) {
                 return c;
         return null;
     }
-    // Go and Java use module/package paths that require go.mod / classpath to resolve.
+    if (lang === "php") {
+        if (!spec.startsWith("."))
+            return null;
+        const dir = path.posix.dirname(fromFile);
+        const base = path.posix.normalize(path.posix.join(dir, spec));
+        for (const c of [base, `${base}.php`])
+            if (trackedSet.has(c))
+                return c;
+        return null;
+    }
+    if (lang === "ruby") {
+        if (!spec.startsWith("."))
+            return null;
+        const dir = path.posix.dirname(fromFile);
+        const base = path.posix.normalize(path.posix.join(dir, spec));
+        for (const c of [`${base}.rb`, `${base}/index.rb`, base])
+            if (trackedSet.has(c))
+                return c;
+        return null;
+    }
+    if (lang === "cpp") {
+        // Only quoted includes (#include "...") are relative; angle-bracket ones are system headers
+        if (spec.startsWith("/"))
+            return null;
+        const dir = path.posix.dirname(fromFile);
+        const candidate = path.posix.normalize(path.posix.join(dir, spec));
+        if (trackedSet.has(candidate))
+            return candidate;
+        return null;
+    }
+    if (lang === "rust") {
+        // use crate::module::sub → src/module/sub.rs or src/module/sub/mod.rs
+        if (!spec.startsWith("crate::"))
+            return null;
+        const rel = spec.slice("crate::".length).replace(/::/g, "/");
+        // Detect crate src root: prefer "src/" if any tracked .rs file lives there
+        const roots = trackedSet.has(`src/lib.rs`) || trackedSet.has(`src/main.rs`) ? ["src"] : ["src", ""];
+        for (const root of roots) {
+            const base = root ? `${root}/${rel}` : rel;
+            for (const c of [`${base}.rs`, `${base}/mod.rs`])
+                if (trackedSet.has(c))
+                    return c;
+        }
+        return null;
+    }
+    // Go, Java, Kotlin, Scala use absolute package/module paths that require manifests to resolve.
     return null;
 }
 function computeMartinMetrics(signatures, trackedSet, moduleDefinition) {

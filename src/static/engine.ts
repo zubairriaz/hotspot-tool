@@ -5,11 +5,11 @@ import type { Config } from "../types";
 import { supportedFiles, type Language } from "./detect";
 import { extractSignature, type FileSignature } from "./extract";
 import { computeComplexity } from "./complexity";
-import { computeMartinMetrics } from "./martin";
+import { computeMartinMetrics, type MartinMetrics } from "./martin";
 
 export interface StaticResult {
   complexityByFile: Map<string, number>;
-  distanceByFile: Map<string, number>;
+  distanceByFile: Map<string, MartinMetrics>;
 }
 
 /**
@@ -51,9 +51,7 @@ export async function runStaticEngine(
     return { complexityByFile: new Map(), distanceByFile: new Map() };
   }
 
-  const martinMap = computeMartinMetrics(signatures, trackedFiles, config.moduleDefinition);
-  const distanceByFile = new Map<string, number>();
-  for (const [file, m] of martinMap) distanceByFile.set(file, m.distance);
+  const distanceByFile = computeMartinMetrics(signatures, trackedFiles, config.moduleDefinition);
 
   core.info(
     `Static engine: complexity for ${complexityByFile.size} file(s), Martin's Distance for ${distanceByFile.size} file(s).`,

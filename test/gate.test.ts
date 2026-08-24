@@ -3,6 +3,11 @@ import assert from "node:assert/strict";
 import { evaluateGate } from "../src/gate";
 import { rankHotspots } from "../src/hotspot";
 import type { AnalysisResult, Config, FileHistory } from "../src/types";
+import type { MartinMetrics } from "../src/static/martin";
+
+function mm(distance: number, abstractness = 0, instability = 0): MartinMetrics {
+  return { distance, abstractness, instability };
+}
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
@@ -131,7 +136,7 @@ test("empty touched list always passes", () => {
 test("distance gate: no violations when distanceMax is null (off by default)", () => {
   const config = makeConfig({ distanceMax: null });
   const analysis = buildAnalysis(config);
-  const distanceByFile = new Map([["hot.ts", 0.99]]);
+  const distanceByFile = new Map([["hot.ts", mm(0.99)]]);
   const result = evaluateGate(analysis, ["hot.ts"], config, distanceByFile);
   assert.equal(result.distanceViolations.length, 0);
 });
@@ -139,8 +144,7 @@ test("distance gate: no violations when distanceMax is null (off by default)", (
 test("distance gate: flags a file exceeding distanceMax", () => {
   const config = makeConfig({ enforcementLevel: "block", distanceMax: 0.5 });
   const analysis = buildAnalysis(config);
-  // "clean-but-distant.ts" is not a hotspot but its D exceeds the gate
-  const distanceByFile = new Map([["clean-but-distant.ts", 0.8]]);
+  const distanceByFile = new Map([["clean-but-distant.ts", mm(0.8)]]);
   const result = evaluateGate(analysis, ["clean-but-distant.ts"], config, distanceByFile);
   assert.equal(result.distanceViolations.length, 1);
   assert.equal(result.distanceViolations[0]!.path, "clean-but-distant.ts");
@@ -150,7 +154,7 @@ test("distance gate: flags a file exceeding distanceMax", () => {
 test("distance gate: file exactly at distanceMax is not a violation", () => {
   const config = makeConfig({ distanceMax: 0.5 });
   const analysis = buildAnalysis(config);
-  const distanceByFile = new Map([["borderline.ts", 0.5]]);
+  const distanceByFile = new Map([["borderline.ts", mm(0.5)]]);
   const result = evaluateGate(analysis, ["borderline.ts"], config, distanceByFile);
   assert.equal(result.distanceViolations.length, 0);
 });
@@ -159,8 +163,8 @@ test("distance gate: only flags touched files, not the whole repo", () => {
   const config = makeConfig({ distanceMax: 0.3 });
   const analysis = buildAnalysis(config);
   const distanceByFile = new Map([
-    ["touched.ts", 0.9],
-    ["untouched.ts", 0.9],
+    ["touched.ts", mm(0.9)],
+    ["untouched.ts", mm(0.9)],
   ]);
   const result = evaluateGate(analysis, ["touched.ts"], config, distanceByFile);
   assert.equal(result.distanceViolations.length, 1);
@@ -191,7 +195,7 @@ test("reason string includes path, percentile, commit count and author count", (
 test("distance violation reason includes the D value and configured max", () => {
   const config = makeConfig({ distanceMax: 0.4 });
   const analysis = buildAnalysis(config);
-  const distanceByFile = new Map([["risky.ts", 0.75]]);
+  const distanceByFile = new Map([["risky.ts", mm(0.75)]]);
   const result = evaluateGate(analysis, ["risky.ts"], config, distanceByFile);
   const reason = result.reasons[0]!;
   assert.ok(reason.includes("risky.ts"));
@@ -204,7 +208,7 @@ test("distance violation reason includes the D value and configured max", () => 
 test("both hotspot and distance violations can trigger simultaneously", () => {
   const config = makeConfig({ enforcementLevel: "block", distanceMax: 0.3 });
   const analysis = buildAnalysis(config);
-  const distanceByFile = new Map([["hot.ts", 0.9]]);
+  const distanceByFile = new Map([["hot.ts", mm(0.9)]]);
   const result = evaluateGate(analysis, ["hot.ts"], config, distanceByFile);
   assert.equal(result.touchedHotspots.length, 1);
   assert.equal(result.distanceViolations.length, 1);

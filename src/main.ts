@@ -113,10 +113,17 @@ async function run(): Promise<void> {
       );
     }
     for (const v of gate.distanceViolations) {
+      const A = v.abstractness.toFixed(2);
+      const I = v.instability.toFixed(2);
+      const isZonePain = v.abstractness < 0.5 && v.instability < 0.5;
+      const isZoneUseless = v.abstractness >= 0.5 && v.instability >= 0.5;
+      const zone = isZonePain
+        ? `Zone of Pain (A=${A}, I=${I}) — stable and concrete. Extract an interface so callers depend on the abstraction, not this implementation.`
+        : isZoneUseless
+        ? `Zone of Uselessness (A=${A}, I=${I}) — abstract but unstable. Freeze the API contract and push volatile behaviour into concrete implementations.`
+        : `Off the Main Sequence (A=${A}, I=${I}). Add abstractions or reduce coupling to bring A + I closer to 1.`;
       core.error(
-        `Martin's Distance D=${v.distance.toFixed(2)} exceeds distance-max (${gateConfig.distanceMax}). ` +
-          `Zone of Pain if stable+concrete: extract an interface. ` +
-          `Zone of Uselessness if abstract+unstable: freeze the API.`,
+        `Martin's Distance D=${v.distance.toFixed(2)} exceeds distance-max (${gateConfig.distanceMax}). ${zone}`,
         { file: v.path, title: "📐 Distance violation" },
       );
     }

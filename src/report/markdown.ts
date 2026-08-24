@@ -1,5 +1,5 @@
 import type { AnalysisResult, Config, GateStatus, ScoredFile } from "../types";
-import type { GateResult } from "../gate";
+import type { GateResult, DistanceViolation } from "../gate";
 
 export const COMMENT_MARKER = "<!-- hotspot-tool:pr-comment -->";
 
@@ -20,7 +20,13 @@ function complexityCell(h: ScoredFile): string {
   return `${h.complexity}`;
 }
 
-function whatToDo(hotspots: ScoredFile[], distanceViolations: { path: string; distance: number }[], distanceMax: number | null, acknowledged: boolean): string[] {
+function zoneLabel(v: DistanceViolation): { badge: string; zone: string } {
+  if (v.abstractness < 0.5 && v.instability < 0.5) return { badge: "🔥 Zone of Pain", zone: "pain" };
+  if (v.abstractness >= 0.5 && v.instability >= 0.5) return { badge: "🌫️ Zone of Uselessness", zone: "useless" };
+  return { badge: "⚠️ Off Main Sequence", zone: "other" };
+}
+
+function whatToDo(hotspots: ScoredFile[], distanceViolations: DistanceViolation[], distanceMax: number | null, acknowledged: boolean): string[] {
   const lines: string[] = [];
   lines.push("<details><summary>🛠 What should I do?</summary>");
   lines.push("");
@@ -66,14 +72,16 @@ function whatToDo(hotspots: ScoredFile[], distanceViolations: { path: string; di
   if (distanceViolations.length > 0) {
     lines.push("**Martin's Distance violations — architectural guidance**");
     lines.push("");
-    lines.push(
-      "Martin's Distance D = |Abstractness + Instability − 1|. A value near 1 means the file sits in a danger zone:",
-    );
-    lines.push("- **Zone of Pain** (D≈1, stable + concrete): many files depend on this one, but it has no abstractions. Every change here ripples everywhere. Fix: extract an interface or trait that dependents rely on instead of the concrete implementation.");
-    lines.push("- **Zone of Uselessness** (D≈1, unstable + abstract): lots of abstractions that keep changing. Fix: stabilise the API — freeze the interface and push volatility into implementations.");
+    lines.push("D = |A + I − 1|. Healthy modules sit on the Main Sequence where A + I ≈ 1.");
     lines.push("");
     for (const v of distanceViolations) {
-      lines.push(`- \`${v.path}\` — D \`${v.distance.toFixed(2)}\` > \`distance-max ${distanceMax}\`. Introduce an abstraction layer or reduce the number of direct dependents.`);
+      const { badge, zone } = zoneLabel(v);
+      const fix = zone === "pain"
+        ? `Stable (I=${v.instability.toFixed(2)}) but fully concrete (A=${v.abstractness.toFixed(2)}). Extract an interface so callers depend on the abstraction, not this implementation.`
+        : zone === "useless"
+        ? `Abstract (A=${v.abstractness.toFixed(2)}) but unstable (I=${v.instability.toFixed(2)}). Freeze the API contract; push volatile behaviour into concrete implementations.`
+        : `A=${v.abstractness.toFixed(2)}, I=${v.instability.toFixed(2)}: add abstractions or reduce coupling to bring A + I closer to 1.`;
+      lines.push(`- \`${v.path}\` — ${badge}, D \`${v.distance.toFixed(2)}\` > \`${distanceMax}\`. ${fix}`);
     }
     lines.push("");
   }
@@ -122,10 +130,11 @@ export function renderPrComment(
     if (gate.distanceViolations.length > 0) {
       lines.push("### Martin's Distance violations");
       lines.push("");
-      lines.push("| File | D score | Threshold |");
-      lines.push("|---|---|---|");
+      lines.push("| File | A | I | D | Zone | Threshold |");
+      lines.push("|---|---|---|---|---|---|");
       for (const v of gate.distanceViolations) {
-        lines.push(`| \`${v.path}\` | \`${v.distance.toFixed(2)}\` | \`${config.distanceMax}\` |`);
+        const { badge } = zoneLabel(v);
+        lines.push(`| \`${v.path}\` | ${v.abstractness.toFixed(2)} | ${v.instability.toFixed(2)} | \`${v.distance.toFixed(2)}\` | ${badge} | \`${config.distanceMax}\` |`);
       }
       lines.push("");
     }
@@ -193,10 +202,11 @@ export function renderJobSummary(analysis: AnalysisResult, gate: GateResult, con
 
   if (gate.distanceViolations.length > 0) {
     lines.push("## Martin's Distance violations");
-    lines.push("| File | D score | Threshold |");
-    lines.push("|---|---|---|");
+    lines.push("| File | A | I | D | Zone | Threshold |");
+    lines.push("|---|---|---|---|---|---|");
     for (const v of gate.distanceViolations) {
-      lines.push(`| \`${v.path}\` | \`${v.distance.toFixed(2)}\` | \`${config.distanceMax}\` |`);
+      const { badge } = zoneLabel(v);
+      lines.push(`| \`${v.path}\` | ${v.abstractness.toFixed(2)} | ${v.instability.toFixed(2)} | \`${v.distance.toFixed(2)}\` | ${badge} | \`${config.distanceMax}\` |`);
     }
     lines.push("");
   }

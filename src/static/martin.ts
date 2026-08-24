@@ -51,7 +51,45 @@ function resolveImport(
     return null;
   }
 
-  // Go and Java use module/package paths that require go.mod / classpath to resolve.
+  if (lang === "php") {
+    if (!spec.startsWith(".")) return null;
+    const dir = path.posix.dirname(fromFile);
+    const base = path.posix.normalize(path.posix.join(dir, spec));
+    for (const c of [base, `${base}.php`]) if (trackedSet.has(c)) return c;
+    return null;
+  }
+
+  if (lang === "ruby") {
+    if (!spec.startsWith(".")) return null;
+    const dir = path.posix.dirname(fromFile);
+    const base = path.posix.normalize(path.posix.join(dir, spec));
+    for (const c of [`${base}.rb`, `${base}/index.rb`, base]) if (trackedSet.has(c)) return c;
+    return null;
+  }
+
+  if (lang === "cpp") {
+    // Only quoted includes (#include "...") are relative; angle-bracket ones are system headers
+    if (spec.startsWith("/")) return null;
+    const dir = path.posix.dirname(fromFile);
+    const candidate = path.posix.normalize(path.posix.join(dir, spec));
+    if (trackedSet.has(candidate)) return candidate;
+    return null;
+  }
+
+  if (lang === "rust") {
+    // use crate::module::sub → src/module/sub.rs or src/module/sub/mod.rs
+    if (!spec.startsWith("crate::")) return null;
+    const rel = spec.slice("crate::".length).replace(/::/g, "/");
+    // Detect crate src root: prefer "src/" if any tracked .rs file lives there
+    const roots = trackedSet.has(`src/lib.rs`) || trackedSet.has(`src/main.rs`) ? ["src"] : ["src", ""];
+    for (const root of roots) {
+      const base = root ? `${root}/${rel}` : rel;
+      for (const c of [`${base}.rs`, `${base}/mod.rs`]) if (trackedSet.has(c)) return c;
+    }
+    return null;
+  }
+
+  // Go, Java, Kotlin, Scala use absolute package/module paths that require manifests to resolve.
   return null;
 }
 
