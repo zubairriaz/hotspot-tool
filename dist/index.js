@@ -29963,6 +29963,7 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.loadConfig = loadConfig;
 const core = __importStar(__nccwpck_require__(7484));
+const glob_1 = __nccwpck_require__(339);
 const ENFORCEMENT_LEVELS = ["info", "warn", "block"];
 const MODULE_DEFINITIONS = ["file", "directory", "workspace"];
 function parseList(raw) {
@@ -30019,8 +30020,10 @@ function loadConfig() {
     }).filter((r) => r !== null);
     const languagesRaw = (core.getInput("languages") || "auto").trim();
     const languages = languagesRaw.toLowerCase() === "auto" ? "auto" : parseList(languagesRaw);
+    const noDefaultExcludes = (core.getInput("no-default-excludes") || "false").toLowerCase() === "true";
     const excludesRaw = core.getInput("excludes") || "";
-    const excludes = excludesRaw.trim() === "" ? [] : parseList(excludesRaw);
+    const userExcludes = excludesRaw.trim() === "" ? [] : parseList(excludesRaw);
+    const excludes = noDefaultExcludes ? userExcludes : [...glob_1.DEFAULT_EXCLUDES, ...userExcludes];
     return {
         enforcementLevel,
         historyWindowDays: parseInt10(core.getInput("history-window-days") || "90", 90, "history-window-days"),
@@ -30035,6 +30038,7 @@ function loadConfig() {
         comment: (core.getInput("comment") || "true").toLowerCase() !== "false",
         generateMap: (core.getInput("generate-map") || "true").toLowerCase() !== "false",
         generateArtifact: (core.getInput("generate-artifact") || "true").toLowerCase() !== "false",
+        noDefaultExcludes,
         acknowledgeLabel: core.getInput("acknowledge-label") || "hotspot-acknowledge",
         githubToken: core.getInput("github-token"),
     };
@@ -30541,6 +30545,9 @@ const engine_1 = __nccwpck_require__(2970);
 async function run() {
     const config = (0, config_1.loadConfig)();
     core.info(`hotspot-tool config: enforcement=${config.enforcementLevel}, window=${config.historyWindowDays}d, threshold=${config.hotspotThreshold}th-pct, change-freq-min=${config.changeFreqMin}, complexity-min=${config.complexityMin}, module=${config.moduleDefinition}, languages=${Array.isArray(config.languages) ? config.languages.join(",") : config.languages}`);
+    if (config.excludes.length > 0) {
+        core.info(`Excludes (${config.excludes.length}): ${config.excludes.join(", ")}`);
+    }
     const cwd = process.env.GITHUB_WORKSPACE || process.cwd();
     if (!(await (0, exec_1.isGitRepo)(cwd))) {
         core.setFailed("Not a git repository. hotspot-tool needs git history — check out the repo before this step.");
@@ -31008,6 +31015,28 @@ function countBranches(src, lang) {
         case "csharp":
             patterns.push(/\bif\s*\(/g, /\belse\s+if\s*\(/g, /\bwhile\s*\(/g, /\bfor\s*\(/g, /\bforeach\s*\(/g, /\bdo\b/g, /\bcase\s+/g, /\bcatch\s*\(/g, /&&/g, /\|\|/g, /\?(?![.?])/g);
             break;
+        case "kotlin":
+            patterns.push(/\bif\s*\(/g, /\belse\s+if\s*\(/g, /\bwhile\s*\(/g, /\bfor\s*\(/g, /\bwhen\b/g, // when-expression branches
+            /\bcatch\s*\(/g, /&&/g, /\|\|/g, /\?:/g, // Elvis operator
+            /\?(?![.:])/g);
+            break;
+        case "swift":
+            patterns.push(/\bif\b/g, /\belse\s+if\b/g, /\bwhile\b/g, /\bfor\b/g, /\brepeat\b/g, /\bcase\b/g, /\bcatch\b/g, /&&/g, /\|\|/g, /\?\?/g, // nil-coalescing
+            /\?(?![?])/g);
+            break;
+        case "php":
+            patterns.push(/\bif\s*\(/g, /\belseif\s*\(/g, /\bwhile\s*\(/g, /\bfor\s*\(/g, /\bforeach\s*\(/g, /\bcase\s+/g, /\bcatch\s*\(/g, /&&/g, /\|\|/g, /\?\?/g, // null-coalescing
+            /\?(?![?])/g);
+            break;
+        case "ruby":
+            patterns.push(/\bif\b/g, /\belif\b/g, /\bunless\b/g, /\bwhile\b/g, /\bfor\b/g, /\buntil\b/g, /\bcase\b/g, /\bwhen\b/g, /\brescue\b/g, /&&/g, /\|\|/g, /\band\b/g, /\bor\b/g);
+            break;
+        case "cpp":
+            patterns.push(/\bif\s*\(/g, /\belse\s+if\s*\(/g, /\bwhile\s*\(/g, /\bfor\s*\(/g, /\bdo\b/g, /\bcase\s+/g, /\bcatch\s*\(/g, /&&/g, /\|\|/g, /\?(?![?])/g);
+            break;
+        case "scala":
+            patterns.push(/\bif\b/g, /\belse\s+if\b/g, /\bwhile\b/g, /\bfor\b/g, /\bmatch\b/g, /\bcase\b/g, /\bcatch\b/g, /&&/g, /\|\|/g);
+            break;
     }
     return patterns.reduce((sum, re) => sum + (src.match(re)?.length ?? 0), 0);
 }
@@ -31020,17 +31049,35 @@ function stripStringsAndComments(src, lang) {
     else if (lang === "rust") {
         src = src.replace(/\/\*[\s\S]*?\*\//g, "");
         src = src.replace(/\/\/[^\n]*/g, "");
-        src = src.replace(/r#"[\s\S]*?"#/g, '""'); // raw strings
+        src = src.replace(/r#"[\s\S]*?"#/g, '""');
+    }
+    else if (lang === "ruby") {
+        src = src.replace(/=begin[\s\S]*?=end/g, "");
+        src = src.replace(/#[^\n]*/g, "");
+    }
+    else if (lang === "php") {
+        src = src.replace(/\/\*[\s\S]*?\*\//g, "");
+        src = src.replace(/\/\/[^\n]*/g, "");
+        src = src.replace(/#[^\n]*/g, ""); // PHP also allows # comments
     }
     else {
+        // C-style block + line comments (JS/TS/Go/Java/Kotlin/Swift/C++/Scala/C#)
         src = src.replace(/\/\*[\s\S]*?\*\//g, "");
         src = src.replace(/\/\/[^\n]*/g, "");
     }
-    // Remove string literals (simplified — does not handle all escape sequences)
     src = src.replace(/"(?:[^"\\]|\\.)*"/g, '""');
     src = src.replace(/'(?:[^'\\]|\\.)*'/g, "''");
     if (lang === "typescript" || lang === "javascript") {
         src = src.replace(/`(?:[^`\\]|\\.)*`/g, "``");
+    }
+    if (lang === "kotlin") {
+        src = src.replace(/"""[\s\S]*?"""/g, '""'); // multiline strings
+    }
+    if (lang === "scala") {
+        src = src.replace(/"""[\s\S]*?"""/g, '""'); // triple-quoted strings
+    }
+    if (lang === "swift") {
+        src = src.replace(/"""[\s\S]*?"""/g, '""'); // multiline strings
     }
     return src;
 }
@@ -31094,6 +31141,21 @@ const EXT_MAP = {
     ".java": "java",
     ".rs": "rust",
     ".cs": "csharp",
+    ".kt": "kotlin",
+    ".kts": "kotlin",
+    ".swift": "swift",
+    ".php": "php",
+    ".phtml": "php",
+    ".rb": "ruby",
+    ".c": "cpp",
+    ".cc": "cpp",
+    ".cpp": "cpp",
+    ".cxx": "cpp",
+    ".h": "cpp",
+    ".hpp": "cpp",
+    ".hxx": "cpp",
+    ".scala": "scala",
+    ".sc": "scala",
 };
 function detectLanguage(filePath) {
     const ext = path.extname(filePath).toLowerCase();
@@ -31218,6 +31280,12 @@ function extractSignature(source, lang) {
         case "java": return extractJava(source);
         case "rust": return extractRust(source);
         case "csharp": return extractCS(source);
+        case "kotlin": return extractKotlin(source);
+        case "swift": return extractSwift(source);
+        case "php": return extractPhp(source);
+        case "ruby": return extractRuby(source);
+        case "cpp": return extractCpp(source);
+        case "scala": return extractScala(source);
     }
 }
 function extractTS(src) {
@@ -31330,6 +31398,96 @@ function extractCS(src) {
         rawImports: [...new Set(rawImports)],
         abstractCount: interfaceCount + abstractClsCount,
         concreteCount: Math.max(0, classCount - abstractClsCount) + structCount + recordCount + enumCount,
+    };
+}
+function extractKotlin(src) {
+    const rawImports = [];
+    for (const m of src.matchAll(/^import\s+([\w.]+)/gm))
+        rawImports.push(m[1]);
+    const interfaceCount = (src.match(/\binterface\s+\w/g) ?? []).length;
+    const abstractClsCount = (src.match(/\babstract\s+class\s+\w/g) ?? []).length;
+    const classCount = (src.match(/\bclass\s+\w/g) ?? []).length;
+    const objectCount = (src.match(/\bobject\s+\w/g) ?? []).length;
+    const dataClassCount = (src.match(/\bdata\s+class\s+\w/g) ?? []).length;
+    return {
+        rawImports: [...new Set(rawImports)],
+        abstractCount: interfaceCount + abstractClsCount,
+        concreteCount: Math.max(0, classCount - abstractClsCount) + objectCount + dataClassCount,
+    };
+}
+function extractSwift(src) {
+    const rawImports = [];
+    for (const m of src.matchAll(/^import\s+([\w.]+)/gm))
+        rawImports.push(m[1]);
+    const protocolCount = (src.match(/\bprotocol\s+\w/g) ?? []).length;
+    const classCount = (src.match(/\bclass\s+\w/g) ?? []).length;
+    const structCount = (src.match(/\bstruct\s+\w/g) ?? []).length;
+    const enumCount = (src.match(/\benum\s+\w/g) ?? []).length;
+    const actorCount = (src.match(/\bactor\s+\w/g) ?? []).length;
+    return {
+        rawImports: [...new Set(rawImports)],
+        abstractCount: protocolCount,
+        concreteCount: classCount + structCount + enumCount + actorCount,
+    };
+}
+function extractPhp(src) {
+    const rawImports = [];
+    for (const m of src.matchAll(/\brequire(?:_once)?\s*\(?['"]([^'"]+)['"]/g))
+        rawImports.push(m[1]);
+    for (const m of src.matchAll(/\binclude(?:_once)?\s*\(?['"]([^'"]+)['"]/g))
+        rawImports.push(m[1]);
+    for (const m of src.matchAll(/\buse\s+([\w\\]+)/g))
+        rawImports.push(m[1]);
+    const interfaceCount = (src.match(/\binterface\s+\w/g) ?? []).length;
+    const abstractClsCount = (src.match(/\babstract\s+class\s+\w/g) ?? []).length;
+    const classCount = (src.match(/\bclass\s+\w/g) ?? []).length;
+    const traitCount = (src.match(/\btrait\s+\w/g) ?? []).length;
+    return {
+        rawImports: [...new Set(rawImports)],
+        abstractCount: interfaceCount + abstractClsCount,
+        concreteCount: Math.max(0, classCount - abstractClsCount) + traitCount,
+    };
+}
+function extractRuby(src) {
+    const rawImports = [];
+    for (const m of src.matchAll(/\brequire(?:_relative)?\s+['"]([^'"]+)['"]/g))
+        rawImports.push(m[1]);
+    const moduleCount = (src.match(/\bmodule\s+\w/g) ?? []).length;
+    const classCount = (src.match(/\bclass\s+\w/g) ?? []).length;
+    return {
+        rawImports: [...new Set(rawImports)],
+        abstractCount: moduleCount,
+        concreteCount: classCount,
+    };
+}
+function extractCpp(src) {
+    const rawImports = [];
+    for (const m of src.matchAll(/^#include\s+["<]([^">]+)[">]/gm))
+        rawImports.push(m[1]);
+    const classCount = (src.match(/\bclass\s+\w/g) ?? []).length;
+    const structCount = (src.match(/\bstruct\s+\w/g) ?? []).length;
+    const enumCount = (src.match(/\benum\s+(?:class\s+)?\w/g) ?? []).length;
+    // Pure virtual signals abstraction
+    const pureVirtCount = (src.match(/=\s*0\s*;/g) ?? []).length;
+    return {
+        rawImports: [...new Set(rawImports)],
+        abstractCount: pureVirtCount > 0 ? classCount : 0,
+        concreteCount: classCount + structCount + enumCount,
+    };
+}
+function extractScala(src) {
+    const rawImports = [];
+    for (const m of src.matchAll(/^import\s+([\w.]+(?:\.\{[^}]+\})?)/gm))
+        rawImports.push(m[1]);
+    const traitCount = (src.match(/\btrait\s+\w/g) ?? []).length;
+    const abstractCount = (src.match(/\babstract\s+class\s+\w/g) ?? []).length;
+    const classCount = (src.match(/\bclass\s+\w/g) ?? []).length;
+    const objectCount = (src.match(/\bobject\s+\w/g) ?? []).length;
+    const caseClassCount = (src.match(/\bcase\s+class\s+\w/g) ?? []).length;
+    return {
+        rawImports: [...new Set(rawImports)],
+        abstractCount: traitCount + abstractCount,
+        concreteCount: Math.max(0, classCount - abstractCount) + objectCount + caseClassCount,
     };
 }
 
@@ -31484,6 +31642,23 @@ function computeMartinMetrics(signatures, trackedSet, moduleDefinition) {
 
 "use strict";
 
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.DEFAULT_EXCLUDES = void 0;
+exports.isExcluded = isExcluded;
+// Built-in exclude patterns applied by default to avoid analyzing build artifacts,
+// vendored deps, and minified files. Override with `no-default-excludes: true`.
+exports.DEFAULT_EXCLUDES = [
+    "dist/**",
+    "build/**",
+    "out/**",
+    ".next/**",
+    "vendor/**",
+    "node_modules/**",
+    "coverage/**",
+    "**/*.min.js",
+    "**/*.min.css",
+    "**/*.bundle.js",
+];
 // Minimal glob matcher — handles the patterns teams actually use for excludes:
 //   *        matches any chars except /
 //   **       matches any chars including /
@@ -31491,8 +31666,6 @@ function computeMartinMetrics(signatures, trackedSet, moduleDefinition) {
 //   ?        matches single non-slash char
 //
 // No dependency on micromatch or minimatch — intentionally small.
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.isExcluded = isExcluded;
 function globToRegex(pattern) {
     const p = pattern.replace(/\\/g, "/");
     let r = "^";

@@ -1,7 +1,20 @@
 import * as path from "node:path";
 import type { Config } from "../types";
 
-export type Language = "typescript" | "javascript" | "python" | "go" | "java" | "rust" | "csharp";
+export type Language =
+  | "typescript"
+  | "javascript"
+  | "python"
+  | "go"
+  | "java"
+  | "rust"
+  | "csharp"
+  | "kotlin"
+  | "swift"
+  | "php"
+  | "ruby"
+  | "cpp"
+  | "scala";
 
 const EXT_MAP: Record<string, Language> = {
   ".ts": "typescript",
@@ -17,6 +30,21 @@ const EXT_MAP: Record<string, Language> = {
   ".java": "java",
   ".rs": "rust",
   ".cs": "csharp",
+  ".kt": "kotlin",
+  ".kts": "kotlin",
+  ".swift": "swift",
+  ".php": "php",
+  ".phtml": "php",
+  ".rb": "ruby",
+  ".c": "cpp",
+  ".cc": "cpp",
+  ".cpp": "cpp",
+  ".cxx": "cpp",
+  ".h": "cpp",
+  ".hpp": "cpp",
+  ".hxx": "cpp",
+  ".scala": "scala",
+  ".sc": "scala",
 };
 
 export function detectLanguage(filePath: string): Language | null {

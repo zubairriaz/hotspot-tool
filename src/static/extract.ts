@@ -15,6 +15,12 @@ export function extractSignature(source: string, lang: Language): FileSignature 
     case "java":       return extractJava(source);
     case "rust":       return extractRust(source);
     case "csharp":     return extractCS(source);
+    case "kotlin":     return extractKotlin(source);
+    case "swift":      return extractSwift(source);
+    case "php":        return extractPhp(source);
+    case "ruby":       return extractRuby(source);
+    case "cpp":        return extractCpp(source);
+    case "scala":      return extractScala(source);
   }
 }
 
@@ -147,5 +153,113 @@ function extractCS(src: string): FileSignature {
     rawImports: [...new Set(rawImports)],
     abstractCount: interfaceCount + abstractClsCount,
     concreteCount: Math.max(0, classCount - abstractClsCount) + structCount + recordCount + enumCount,
+  };
+}
+
+function extractKotlin(src: string): FileSignature {
+  const rawImports: string[] = [];
+  for (const m of src.matchAll(/^import\s+([\w.]+)/gm))
+    rawImports.push(m[1]!);
+
+  const interfaceCount   = (src.match(/\binterface\s+\w/g) ?? []).length;
+  const abstractClsCount = (src.match(/\babstract\s+class\s+\w/g) ?? []).length;
+  const classCount       = (src.match(/\bclass\s+\w/g) ?? []).length;
+  const objectCount      = (src.match(/\bobject\s+\w/g) ?? []).length;
+  const dataClassCount   = (src.match(/\bdata\s+class\s+\w/g) ?? []).length;
+
+  return {
+    rawImports: [...new Set(rawImports)],
+    abstractCount: interfaceCount + abstractClsCount,
+    concreteCount: Math.max(0, classCount - abstractClsCount) + objectCount + dataClassCount,
+  };
+}
+
+function extractSwift(src: string): FileSignature {
+  const rawImports: string[] = [];
+  for (const m of src.matchAll(/^import\s+([\w.]+)/gm))
+    rawImports.push(m[1]!);
+
+  const protocolCount    = (src.match(/\bprotocol\s+\w/g) ?? []).length;
+  const classCount       = (src.match(/\bclass\s+\w/g) ?? []).length;
+  const structCount      = (src.match(/\bstruct\s+\w/g) ?? []).length;
+  const enumCount        = (src.match(/\benum\s+\w/g) ?? []).length;
+  const actorCount       = (src.match(/\bactor\s+\w/g) ?? []).length;
+
+  return {
+    rawImports: [...new Set(rawImports)],
+    abstractCount: protocolCount,
+    concreteCount: classCount + structCount + enumCount + actorCount,
+  };
+}
+
+function extractPhp(src: string): FileSignature {
+  const rawImports: string[] = [];
+  for (const m of src.matchAll(/\brequire(?:_once)?\s*\(?['"]([^'"]+)['"]/g))
+    rawImports.push(m[1]!);
+  for (const m of src.matchAll(/\binclude(?:_once)?\s*\(?['"]([^'"]+)['"]/g))
+    rawImports.push(m[1]!);
+  for (const m of src.matchAll(/\buse\s+([\w\\]+)/g))
+    rawImports.push(m[1]!);
+
+  const interfaceCount   = (src.match(/\binterface\s+\w/g) ?? []).length;
+  const abstractClsCount = (src.match(/\babstract\s+class\s+\w/g) ?? []).length;
+  const classCount       = (src.match(/\bclass\s+\w/g) ?? []).length;
+  const traitCount       = (src.match(/\btrait\s+\w/g) ?? []).length;
+
+  return {
+    rawImports: [...new Set(rawImports)],
+    abstractCount: interfaceCount + abstractClsCount,
+    concreteCount: Math.max(0, classCount - abstractClsCount) + traitCount,
+  };
+}
+
+function extractRuby(src: string): FileSignature {
+  const rawImports: string[] = [];
+  for (const m of src.matchAll(/\brequire(?:_relative)?\s+['"]([^'"]+)['"]/g))
+    rawImports.push(m[1]!);
+
+  const moduleCount  = (src.match(/\bmodule\s+\w/g) ?? []).length;
+  const classCount   = (src.match(/\bclass\s+\w/g) ?? []).length;
+
+  return {
+    rawImports: [...new Set(rawImports)],
+    abstractCount: moduleCount,
+    concreteCount: classCount,
+  };
+}
+
+function extractCpp(src: string): FileSignature {
+  const rawImports: string[] = [];
+  for (const m of src.matchAll(/^#include\s+["<]([^">]+)[">]/gm))
+    rawImports.push(m[1]!);
+
+  const classCount    = (src.match(/\bclass\s+\w/g) ?? []).length;
+  const structCount   = (src.match(/\bstruct\s+\w/g) ?? []).length;
+  const enumCount     = (src.match(/\benum\s+(?:class\s+)?\w/g) ?? []).length;
+  // Pure virtual signals abstraction
+  const pureVirtCount = (src.match(/=\s*0\s*;/g) ?? []).length;
+
+  return {
+    rawImports: [...new Set(rawImports)],
+    abstractCount: pureVirtCount > 0 ? classCount : 0,
+    concreteCount: classCount + structCount + enumCount,
+  };
+}
+
+function extractScala(src: string): FileSignature {
+  const rawImports: string[] = [];
+  for (const m of src.matchAll(/^import\s+([\w.]+(?:\.\{[^}]+\})?)/gm))
+    rawImports.push(m[1]!);
+
+  const traitCount     = (src.match(/\btrait\s+\w/g) ?? []).length;
+  const abstractCount  = (src.match(/\babstract\s+class\s+\w/g) ?? []).length;
+  const classCount     = (src.match(/\bclass\s+\w/g) ?? []).length;
+  const objectCount    = (src.match(/\bobject\s+\w/g) ?? []).length;
+  const caseClassCount = (src.match(/\bcase\s+class\s+\w/g) ?? []).length;
+
+  return {
+    rawImports: [...new Set(rawImports)],
+    abstractCount: traitCount + abstractCount,
+    concreteCount: Math.max(0, classCount - abstractCount) + objectCount + caseClassCount,
   };
 }

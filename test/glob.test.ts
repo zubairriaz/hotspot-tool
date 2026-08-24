@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { isExcluded } from "../src/utils/glob";
+import { isExcluded, DEFAULT_EXCLUDES } from "../src/utils/glob";
 
 // ── single star (*) — matches within one segment ────────────────────────────
 
@@ -87,4 +87,38 @@ test("**/__tests__/** excludes test directories anywhere", () => {
 test("dot-escaped in pattern (e.g. *.d.ts)", () => {
   assert.ok(isExcluded("index.d.ts", ["*.d.ts"]));
   assert.ok(!isExcluded("indexXdXts", ["*.d.ts"])); // dot must be literal
+});
+
+// ── DEFAULT_EXCLUDES — built-in artifact/vendor patterns ─────────────────────
+
+test("DEFAULT_EXCLUDES blocks dist/index.js", () => {
+  assert.ok(isExcluded("dist/index.js", DEFAULT_EXCLUDES));
+});
+
+test("DEFAULT_EXCLUDES blocks nested build output", () => {
+  assert.ok(isExcluded("build/static/main.chunk.js", DEFAULT_EXCLUDES));
+  assert.ok(isExcluded("out/server/pages/index.js", DEFAULT_EXCLUDES));
+  assert.ok(isExcluded(".next/server/pages/_app.js", DEFAULT_EXCLUDES));
+});
+
+test("DEFAULT_EXCLUDES blocks vendor and node_modules", () => {
+  assert.ok(isExcluded("vendor/github.com/some/dep/file.go", DEFAULT_EXCLUDES));
+  assert.ok(isExcluded("node_modules/lodash/index.js", DEFAULT_EXCLUDES));
+});
+
+test("DEFAULT_EXCLUDES blocks minified and bundled files", () => {
+  assert.ok(isExcluded("public/app.min.js", DEFAULT_EXCLUDES));
+  assert.ok(isExcluded("static/vendor.bundle.js", DEFAULT_EXCLUDES));
+  assert.ok(isExcluded("assets/styles.min.css", DEFAULT_EXCLUDES));
+});
+
+test("DEFAULT_EXCLUDES blocks coverage output", () => {
+  assert.ok(isExcluded("coverage/lcov-report/index.html", DEFAULT_EXCLUDES));
+});
+
+test("DEFAULT_EXCLUDES does NOT block normal source files", () => {
+  assert.ok(!isExcluded("src/core.ts", DEFAULT_EXCLUDES));
+  assert.ok(!isExcluded("lib/utils.go", DEFAULT_EXCLUDES));
+  assert.ok(!isExcluded("app/models/user.py", DEFAULT_EXCLUDES));
+  assert.ok(!isExcluded("distribution/strategy.ts", DEFAULT_EXCLUDES)); // "dist" prefix only as segment
 });

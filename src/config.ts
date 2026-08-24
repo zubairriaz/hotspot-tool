@@ -1,5 +1,6 @@
 import * as core from "@actions/core";
 import type { Config, EnforcementLevel, ModuleDefinition } from "./types";
+import { DEFAULT_EXCLUDES } from "./utils/glob";
 
 const ENFORCEMENT_LEVELS: EnforcementLevel[] = ["info", "warn", "block"];
 const MODULE_DEFINITIONS: ModuleDefinition[] = ["file", "directory", "workspace"];
@@ -63,8 +64,10 @@ export function loadConfig(): Config {
   const languagesRaw = (core.getInput("languages") || "auto").trim();
   const languages = languagesRaw.toLowerCase() === "auto" ? "auto" : parseList(languagesRaw);
 
+  const noDefaultExcludes = (core.getInput("no-default-excludes") || "false").toLowerCase() === "true";
   const excludesRaw = core.getInput("excludes") || "";
-  const excludes = excludesRaw.trim() === "" ? [] : parseList(excludesRaw);
+  const userExcludes = excludesRaw.trim() === "" ? [] : parseList(excludesRaw);
+  const excludes = noDefaultExcludes ? userExcludes : [...DEFAULT_EXCLUDES, ...userExcludes];
 
   return {
     enforcementLevel,
@@ -80,6 +83,7 @@ export function loadConfig(): Config {
     comment: (core.getInput("comment") || "true").toLowerCase() !== "false",
     generateMap: (core.getInput("generate-map") || "true").toLowerCase() !== "false",
     generateArtifact: (core.getInput("generate-artifact") || "true").toLowerCase() !== "false",
+    noDefaultExcludes,
     acknowledgeLabel: core.getInput("acknowledge-label") || "hotspot-acknowledge",
     githubToken: core.getInput("github-token"),
   };

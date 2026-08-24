@@ -43,9 +43,13 @@ inputs:
     required: false
     default: "auto"
   excludes:
-    description: "Newline- or comma-separated glob patterns for files to exclude from analysis (e.g. dist/**,**/*.generated.ts,vendor/**)."
+    description: "Newline- or comma-separated glob patterns for files to exclude from analysis (e.g. **/*.generated.ts). Added on top of the built-in defaults."
     required: false
     default: ""
+  no-default-excludes:
+    description: "Set to 'true' to disable the built-in default excludes (dist/**, build/**, vendor/**, node_modules/**, coverage/**, **/*.min.js, etc.) and rely solely on your own 'excludes' list."
+    required: false
+    default: "false"
   comment:
     description: "Whether to post/update the PR comment."
     required: false

@@ -17,6 +17,9 @@ async function run(): Promise<void> {
   core.info(
     `hotspot-tool config: enforcement=${config.enforcementLevel}, window=${config.historyWindowDays}d, threshold=${config.hotspotThreshold}th-pct, change-freq-min=${config.changeFreqMin}, complexity-min=${config.complexityMin}, module=${config.moduleDefinition}, languages=${Array.isArray(config.languages) ? config.languages.join(",") : config.languages}`,
   );
+  if (config.excludes.length > 0) {
+    core.info(`Excludes (${config.excludes.length}): ${config.excludes.join(", ")}`);
+  }
   const cwd = process.env.GITHUB_WORKSPACE || process.cwd();
 
   if (!(await isGitRepo(cwd))) {

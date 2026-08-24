@@ -85,6 +85,7 @@ function cfg(overrides: Partial<Config> = {}): Config {
     moduleDefinition: "file",
     languages: "auto",
     excludes: [],
+    noDefaultExcludes: true,
     comment: false,
     generateMap: false,
     generateArtifact: false,

@@ -1,3 +1,18 @@
+// Built-in exclude patterns applied by default to avoid analyzing build artifacts,
+// vendored deps, and minified files. Override with `no-default-excludes: true`.
+export const DEFAULT_EXCLUDES: string[] = [
+  "dist/**",
+  "build/**",
+  "out/**",
+  ".next/**",
+  "vendor/**",
+  "node_modules/**",
+  "coverage/**",
+  "**/*.min.js",
+  "**/*.min.css",
+  "**/*.bundle.js",
+];
+
 // Minimal glob matcher — handles the patterns teams actually use for excludes:
 //   *        matches any chars except /
 //   **       matches any chars including /

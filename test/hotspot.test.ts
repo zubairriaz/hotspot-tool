@@ -14,6 +14,7 @@ const baseConfig: Config = {
   moduleDefinition: "directory",
   languages: "auto",
   excludes: [],
+  noDefaultExcludes: true,
   comment: true,
   generateMap: true,
   generateArtifact: true,
