@@ -7,6 +7,10 @@ The `v1` tag always points at the latest `1.x` release; pin a specific `vX.Y.Z` 
 
 ---
 
+## v1.4.4 — 2026-08-24
+
+- fix: comment on actual diff line by parsing PR hunk headers (1f29d42)
+
 ## v1.4.3 — 2026-08-24
 
 - fix: prefer line-1 inline comment over file-level for better visibility (d4fb8ca)
