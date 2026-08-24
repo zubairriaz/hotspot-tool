@@ -7,6 +7,10 @@ The `v1` tag always points at the latest `1.x` release; pin a specific `vX.Y.Z` 
 
 ---
 
+## v1.4.9 — 2026-08-24
+
+- fix: shorten action description to under 125 chars for Marketplace (191d468)
+
 ## v1.4.8 — 2026-08-24
 
 - merge: pull remote (d973a0f)
