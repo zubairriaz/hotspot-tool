@@ -7,6 +7,10 @@ The `v1` tag always points at the latest `1.x` release; pin a specific `vX.Y.Z` 
 
 ---
 
+## v1.4.7 — 2026-08-24
+
+- merge: pull release commit (7376ff6)
+
 ## v1.4.6 — 2026-08-24
 
 - merge: pull release commit (77af30f)
