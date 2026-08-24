@@ -1,5 +1,5 @@
 name: "Code Rot Hotspots"
-description: "Finds where your codebase is actively rotting — the intersection of messy and frequently-changed code — and pushes teams to leave hotspots better than they found them."
+description: "Finds where your codebase is actively rotting: the intersection of messy and frequently-changed code."
 author: "hotspot-tool"
 branding:
   icon: "activity"
