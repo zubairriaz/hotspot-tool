@@ -7,6 +7,10 @@ The `v1` tag always points at the latest `1.x` release; pin a specific `vX.Y.Z` 
 
 ---
 
+## v1.4.1 — 2026-08-24
+
+- feat: inline resolvable review comments per violated file (v1.4.0) (9e8337e)
+
 ## v1.3.3 — 2026-08-24
 
 - chore: merge release auto-bump, keep new dist (4f62f52)
