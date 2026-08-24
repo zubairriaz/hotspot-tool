@@ -16,7 +16,6 @@ const baseConfig: Config = {
   excludes: [],
   noDefaultExcludes: true,
   comment: true,
-  generateMap: true,
   generateArtifact: true,
   acknowledgeLabel: "hotspot-acknowledge",
   githubToken: "",

@@ -16,7 +16,6 @@ export interface Config {
   languages: string[] | "auto";
   excludes: string[];
   comment: boolean;
-  generateMap: boolean;
   generateArtifact: boolean;
   noDefaultExcludes: boolean;
   acknowledgeLabel: string;

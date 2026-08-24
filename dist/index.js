@@ -30036,7 +30036,6 @@ function loadConfig() {
         languages,
         excludes,
         comment: (core.getInput("comment") || "true").toLowerCase() !== "false",
-        generateMap: (core.getInput("generate-map") || "true").toLowerCase() !== "false",
         generateArtifact: (core.getInput("generate-artifact") || "true").toLowerCase() !== "false",
         noDefaultExcludes,
         acknowledgeLabel: core.getInput("acknowledge-label") || "hotspot-acknowledge",

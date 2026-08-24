@@ -87,7 +87,6 @@ function cfg(overrides: Partial<Config> = {}): Config {
     excludes: [],
     noDefaultExcludes: true,
     comment: false,
-    generateMap: false,
     generateArtifact: false,
     acknowledgeLabel: "hotspot-acknowledge",
     githubToken: "",

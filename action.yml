@@ -54,10 +54,6 @@ inputs:
     description: "Whether to post/update the PR comment."
     required: false
     default: "true"
-  generate-map:
-    description: "Whether to render the hotspot map image on full runs."
-    required: false
-    default: "true"
   generate-artifact:
     description: "Whether to write hotspot-report.json to the workspace for downstream jobs or trend tracking."
     required: false

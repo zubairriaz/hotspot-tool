@@ -1,0 +1,137 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# hotspot-tool — quick setup
+#
+# Copy this file to .github/workflows/hotspot.yml and it works as-is.
+# The `hotspot` job below is the one you want. The extra jobs at the bottom are
+# commented-out variants — uncomment whichever matches your situation.
+#
+# Docs: https://github.com/zubairriaz/hotspot-tool
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: Hotspot
+
+on: pull_request
+
+permissions:
+  contents: read
+  pull-requests: write   # required — the action posts inline review comments
+
+jobs:
+  hotspot:
+    name: Hotspot
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # REQUIRED. Without full history the tool cannot measure how often
+          # files change, and results will be wrong or empty.
+          fetch-depth: 0
+
+      - uses: zubairriaz/hotspot-tool@main
+        id: hotspot
+        with:
+          # info  — report only, no comments, never fails
+          # warn  — inline comments, never fails   (start here)
+          # block — inline comments, fails the check on a violation
+          enforcement-level: warn
+
+      # Optional: keep the report for trend tracking.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: hotspot-report
+          path: hotspot-report.json
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# VARIANTS — uncomment one and delete the job above, or run several side by side.
+# ─────────────────────────────────────────────────────────────────────────────
+
+#  # ── Strict: block merges that touch a hotspot ───────────────────────────────
+#  # Add the `hotspot-acknowledge` label to a PR to downgrade block → warn when
+#  # you know about the hotspot and have a plan.
+#  hotspot-strict:
+#    name: Hotspot (blocking)
+#    runs-on: ubuntu-latest
+#    steps:
+#      - uses: actions/checkout@v4
+#        with:
+#          fetch-depth: 0
+#      - uses: zubairriaz/hotspot-tool@main
+#        with:
+#          enforcement-level: block
+#          hotspot-threshold: "90"    # top 10% most-changed files
+#          change-freq-min: "5"       # ...that also changed >= 5 times
+#          complexity-min: "10"       # ...and score >= 10 cyclomatic complexity
+
+#  # ── Observe-only: see what it would flag, without touching your PRs ─────────
+#  # No comments, never fails. Findings land in the job summary and the artifact.
+#  hotspot-observe:
+#    name: Hotspot (observe)
+#    runs-on: ubuntu-latest
+#    steps:
+#      - uses: actions/checkout@v4
+#        with:
+#          fetch-depth: 0
+#      - uses: zubairriaz/hotspot-tool@main
+#        with:
+#          enforcement-level: info
+
+#  # ── Architecture gate: Martin's Distance ───────────────────────────────────
+#  # Off by default. D = |A + I - 1|; 0 is on the main sequence, 1 is worst.
+#  # Calibrate against your repo before enforcing — start by reading the values
+#  # from an `info` run, then set a threshold slightly below what you see.
+#  #
+#  # module-definition decides what a "module" is:
+#  #   file      — each file scored on its own (strictest, noisiest)
+#  #   directory — each folder aggregated (default, usually what you want)
+#  #   workspace — the whole repo as one module
+#  hotspot-architecture:
+#    name: Hotspot (architecture)
+#    runs-on: ubuntu-latest
+#    steps:
+#      - uses: actions/checkout@v4
+#        with:
+#          fetch-depth: 0
+#      - uses: zubairriaz/hotspot-tool@main
+#        with:
+#          enforcement-level: block
+#          distance-max: "0.5"
+#          module-definition: directory
+
+#  # ── Monorepo / noisy repo: narrow what gets analyzed ───────────────────────
+#  # `excludes` is ADDED to the built-in defaults (dist/**, node_modules/**,
+#  # coverage/**, **/*.min.js, ...). Set no-default-excludes: "true" to replace
+#  # them entirely instead.
+#  hotspot-monorepo:
+#    name: Hotspot (monorepo)
+#    runs-on: ubuntu-latest
+#    steps:
+#      - uses: actions/checkout@v4
+#        with:
+#          fetch-depth: 0
+#      - uses: zubairriaz/hotspot-tool@main
+#        with:
+#          enforcement-level: warn
+#          languages: typescript,go
+#          excludes: |
+#            **/*.generated.ts
+#            **/*.pb.go
+#            packages/legacy/**
+#            docs/**
+
+#  # ── Long-lived repo: widen the window and tune bug-fix detection ───────────
+#  # Match your team's commit conventions so the bug-fix ratio means something.
+#  hotspot-tuned:
+#    name: Hotspot (tuned)
+#    runs-on: ubuntu-latest
+#    steps:
+#      - uses: actions/checkout@v4
+#        with:
+#          fetch-depth: 0
+#      - uses: zubairriaz/hotspot-tool@main
+#        with:
+#          enforcement-level: warn
+#          history-window-days: "180"
+#          bugfix-patterns: fix,bug,hotfix,revert,regression,^JIRA-\d+
+#          acknowledge-label: tech-debt-accepted
