@@ -7,6 +7,10 @@ The `v1` tag always points at the latest `1.x` release; pin a specific `vX.Y.Z` 
 
 ---
 
+## v1.2.3 — 2026-08-24
+
+- fix: use node20 runtime in action.yml (node24 not yet recognised by runners) (291ce5f)
+
 ## v1.2.2 — 2026-08-24
 
 - test: add end-to-end tests covering all analysis flows (76 tests) (52e6152)
