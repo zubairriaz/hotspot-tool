@@ -1,6 +1,6 @@
 {
     "name": "hotspot-tool",
-    "version": "1.4.7",
+    "version": "1.4.8",
     "description": "A GitHub Action that finds where a codebase is actively rotting — the intersection of messy and frequently-changed code.",
     "license": "MIT",
     "type": "commonjs",
