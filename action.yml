@@ -72,5 +72,5 @@ outputs:
     description: "pass | warn | fail."
 
 runs:
-  using: "node24"
+  using: "node20"
   main: "dist/index.js"
