@@ -58,7 +58,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0        # REQUIRED — see note below
-      - uses: zubairriaz/hotspot-tool@main
+      - uses: zubairriaz/hotspot-tool@v1
         with:
           enforcement-level: warn
 ```
@@ -221,7 +221,7 @@ The matcher supports `*` (within a segment), `**` (across segments), and `?`. It
 Use them to branch later steps:
 
 ```yaml
-- uses: zubairriaz/hotspot-tool@main
+- uses: zubairriaz/hotspot-tool@v1
   id: hotspot
 - if: steps.hotspot.outputs.gate-status == 'fail'
   run: echo "Touched ${{ steps.hotspot.outputs.touched-hotspot-count }} hotspot(s)"
@@ -240,7 +240,7 @@ The tool needs a GitHub token to post review comments. By default it uses `${{ g
 If your repo restricts the default token, pass your own:
 
 ```yaml
-- uses: zubairriaz/hotspot-tool@main
+- uses: zubairriaz/hotspot-tool@v1
   with:
     github-token: ${{ secrets.MY_PAT }}
 ```

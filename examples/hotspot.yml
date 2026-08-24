@@ -27,7 +27,7 @@ jobs:
           # files change, and results will be wrong or empty.
           fetch-depth: 0
 
-      - uses: zubairriaz/hotspot-tool@main
+      - uses: zubairriaz/hotspot-tool@v1
         id: hotspot
         with:
           # info  — report only, no comments, never fails
@@ -57,7 +57,7 @@ jobs:
 #      - uses: actions/checkout@v4
 #        with:
 #          fetch-depth: 0
-#      - uses: zubairriaz/hotspot-tool@main
+#      - uses: zubairriaz/hotspot-tool@v1
 #        with:
 #          enforcement-level: block
 #          hotspot-threshold: "90"    # top 10% most-changed files
@@ -73,7 +73,7 @@ jobs:
 #      - uses: actions/checkout@v4
 #        with:
 #          fetch-depth: 0
-#      - uses: zubairriaz/hotspot-tool@main
+#      - uses: zubairriaz/hotspot-tool@v1
 #        with:
 #          enforcement-level: info
 
@@ -93,7 +93,7 @@ jobs:
 #      - uses: actions/checkout@v4
 #        with:
 #          fetch-depth: 0
-#      - uses: zubairriaz/hotspot-tool@main
+#      - uses: zubairriaz/hotspot-tool@v1
 #        with:
 #          enforcement-level: block
 #          distance-max: "0.5"
@@ -110,7 +110,7 @@ jobs:
 #      - uses: actions/checkout@v4
 #        with:
 #          fetch-depth: 0
-#      - uses: zubairriaz/hotspot-tool@main
+#      - uses: zubairriaz/hotspot-tool@v1
 #        with:
 #          enforcement-level: warn
 #          languages: typescript,go
@@ -129,7 +129,7 @@ jobs:
 #      - uses: actions/checkout@v4
 #        with:
 #          fetch-depth: 0
-#      - uses: zubairriaz/hotspot-tool@main
+#      - uses: zubairriaz/hotspot-tool@v1
 #        with:
 #          enforcement-level: warn
 #          history-window-days: "180"
