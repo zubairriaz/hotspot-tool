@@ -31669,6 +31669,7 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.computeMartinMetrics = computeMartinMetrics;
+const core = __importStar(__nccwpck_require__(7484));
 const path = __importStar(__nccwpck_require__(6760));
 /** Group key for a file given the module-definition setting. */
 function moduleKey(filePath, def) {
@@ -31795,21 +31796,38 @@ function computeMartinMetrics(signatures, trackedSet, moduleDefinition) {
             afferent.get(toMod).add(fromMod);
         }
     }
-    // Compute A, I, D per module
+    // Compute A, I, D per module.
+    //
+    // Modules with no coupling at all (Ce + Ca === 0) are deliberately omitted.
+    // Instability is Ce / (Ce + Ca), which is 0/0 — undefined, not zero. Treating
+    // an isolated module as I = 0 would assert "maximally stable" on no evidence
+    // and drag D toward |A - 1|, so every unimported leaf file with a concrete
+    // class would be reported as Zone of Pain. Callers see no entry for these
+    // files and skip them rather than acting on a fabricated distance.
     const modMetrics = new Map();
+    let isolatedModules = 0;
     for (const mod of modAbstract.keys()) {
+        const Ce = efferent.get(mod).size;
+        const Ca = afferent.get(mod).size;
+        if (Ce + Ca === 0) {
+            isolatedModules++;
+            continue;
+        }
         const abs = modAbstract.get(mod) ?? 0;
         const con = modConcrete.get(mod) ?? 0;
         const A = abs + con > 0 ? abs / (abs + con) : 0;
-        const Ce = efferent.get(mod).size;
-        const Ca = afferent.get(mod).size;
-        const I = Ce + Ca > 0 ? Ce / (Ce + Ca) : 0;
+        const I = Ce / (Ce + Ca);
         modMetrics.set(mod, { abstractness: A, instability: I, distance: Math.abs(A + I - 1) });
+    }
+    if (isolatedModules > 0) {
+        core.info(`Martin's Distance: skipped ${isolatedModules} module(s) with no resolvable imports in either direction — instability is undefined without coupling.`);
     }
     // Project module metrics back onto individual files
     const result = new Map();
     for (const [file] of signatures) {
-        result.set(file, modMetrics.get(fileToMod.get(file)));
+        const m = modMetrics.get(fileToMod.get(file));
+        if (m)
+            result.set(file, m);
     }
     return result;
 }

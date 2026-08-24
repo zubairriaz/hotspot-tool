@@ -123,8 +123,9 @@ def fn(x):
 
 // ── computeMartinMetrics ────────────────────────────────────────────────────
 
-test("Martin: isolated concrete module has D = 1 (zone of pain)", () => {
-  // A=0 (all concrete), I=0 (no deps in or out) → D = |0+0-1| = 1
+test("Martin: module with no coupling in either direction is omitted, not scored", () => {
+  // Ce + Ca = 0 makes I = Ce/(Ce+Ca) undefined (0/0). Reporting I=0 here would
+  // assert "maximally stable" on no evidence and yield a bogus D = 1.
   const signatures = new Map([
     ["src/worker.ts", {
       sig: { rawImports: [], abstractCount: 0, concreteCount: 3 },
@@ -132,6 +133,25 @@ test("Martin: isolated concrete module has D = 1 (zone of pain)", () => {
     }],
   ]);
   const tracked = new Set(["src/worker.ts"]);
+  const result = computeMartinMetrics(signatures, tracked, "file");
+  assert.equal(result.get("src/worker.ts"), undefined);
+  assert.equal(result.size, 0);
+});
+
+test("Martin: stable concrete module has D = 1 (genuine zone of pain)", () => {
+  // worker is imported by app but imports nothing: Ce=0, Ca=1 → I=0.
+  // A=0 (all concrete) → D = |0+0-1| = 1. Coupling is real, so the score stands.
+  const signatures = new Map([
+    ["src/worker.ts", {
+      sig: { rawImports: [], abstractCount: 0, concreteCount: 3 },
+      lang: "typescript" as const,
+    }],
+    ["src/app.ts", {
+      sig: { rawImports: ["./worker"], abstractCount: 0, concreteCount: 1 },
+      lang: "typescript" as const,
+    }],
+  ]);
+  const tracked = new Set(["src/worker.ts", "src/app.ts"]);
   const result = computeMartinMetrics(signatures, tracked, "file");
   const m = result.get("src/worker.ts")!;
   assert.ok(m !== undefined);
@@ -141,16 +161,23 @@ test("Martin: isolated concrete module has D = 1 (zone of pain)", () => {
 });
 
 test("Martin: fully abstract stable module has D = 0 (ideal)", () => {
-  // A=1 (all abstract), I=0 (nobody imports it here, stable) → D = |1+0-1| = 0
+  // types is imported by app and imports nothing: Ce=0, Ca=1 → I=0.
+  // A=1 (all abstract) → D = |1+0-1| = 0.
   const signatures = new Map([
     ["src/types.ts", {
       sig: { rawImports: [], abstractCount: 5, concreteCount: 0 },
       lang: "typescript" as const,
     }],
+    ["src/app.ts", {
+      sig: { rawImports: ["./types"], abstractCount: 0, concreteCount: 1 },
+      lang: "typescript" as const,
+    }],
   ]);
-  const tracked = new Set(["src/types.ts"]);
+  const tracked = new Set(["src/types.ts", "src/app.ts"]);
   const result = computeMartinMetrics(signatures, tracked, "file");
   const m = result.get("src/types.ts")!;
+  assert.equal(m.abstractness.toFixed(2), "1.00");
+  assert.equal(m.instability.toFixed(2), "0.00");
   assert.equal(m.distance.toFixed(2), "0.00");
 });
 

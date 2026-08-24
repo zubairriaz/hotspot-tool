@@ -128,12 +128,12 @@ describe("end-to-end", () => {
     for (let i = 1; i <= 4; i++)
       await commit(dir, `feat: auth+session ${i}`, {
         "src/auth.ts":    `export function auth() { return ${i}; }`,
-        "src/session.ts": `export function session() { return ${i}; }`,
+        "src/session.ts": `import { auth } from "./auth";\nexport function session() { return auth() + ${i}; }`,
       });
     for (let i = 1; i <= 2; i++)
       await commit(dir, `feat: auth only ${i}`, { "src/auth.ts": `export function auth() { return "v${i}"; }` });
     for (let i = 1; i <= 2; i++)
-      await commit(dir, `feat: session only ${i}`, { "src/session.ts": `export function session() { return "v${i}"; }` });
+      await commit(dir, `feat: session only ${i}`, { "src/session.ts": `import { auth } from "./auth";\nexport function session() { return auth() + "v${i}"; }` });
 
     // ── dist/bundle.js — 8 more commits (9 total) ───────────────────────────
     for (let i = 1; i <= 8; i++)
@@ -320,7 +320,13 @@ describe("end-to-end", () => {
     const c = cfg();
     const tracked = await trackedFiles(dir, c.excludes);
     const { distanceByFile } = await runStaticEngine(tracked, c, dir);
-    assert.ok(distanceByFile.size > 0, "should compute D for at least one file");
+    // session.ts imports auth.ts, so both are coupled and get scored.
+    assert.ok(distanceByFile.has("src/session.ts"), "coupled importer should be scored");
+    assert.ok(distanceByFile.has("src/auth.ts"), "coupled import target should be scored");
+    // quiet.ts has no imports in or out — instability is undefined, so it is omitted
+    // rather than scored with a fabricated I = 0.
+    assert.equal(distanceByFile.get("src/quiet.ts"), undefined, "isolated file must not be scored");
+
     for (const [file, m] of distanceByFile) {
       assert.ok(m.distance >= 0 && m.distance <= 1, `${file}: D=${m.distance.toFixed(3)} is not in [0,1]`);
       assert.ok(m.abstractness >= 0 && m.abstractness <= 1, `${file}: A=${m.abstractness.toFixed(3)} is not in [0,1]`);
