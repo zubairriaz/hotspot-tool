@@ -17,6 +17,7 @@ const baseConfig: Config = {
   comment: true,
   generateMap: true,
   generateArtifact: true,
+  acknowledgeLabel: "hotspot-acknowledge",
   githubToken: "",
 };
 

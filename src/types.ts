@@ -18,6 +18,7 @@ export interface Config {
   comment: boolean;
   generateMap: boolean;
   generateArtifact: boolean;
+  acknowledgeLabel: string;
   githubToken: string;
 }
 

@@ -58,6 +58,10 @@ inputs:
     description: "Whether to write hotspot-report.json to the workspace for downstream jobs or trend tracking."
     required: false
     default: "true"
+  acknowledge-label:
+    description: "PR label name that downgrades 'block' enforcement to 'warn', giving the team time to plan a fix without blocking the merge. Default: hotspot-acknowledge."
+    required: false
+    default: "hotspot-acknowledge"
   github-token:
     description: "Token used to post the PR comment. Defaults to the workflow token."
     required: false

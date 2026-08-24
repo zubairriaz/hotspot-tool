@@ -80,6 +80,7 @@ export function loadConfig(): Config {
     comment: (core.getInput("comment") || "true").toLowerCase() !== "false",
     generateMap: (core.getInput("generate-map") || "true").toLowerCase() !== "false",
     generateArtifact: (core.getInput("generate-artifact") || "true").toLowerCase() !== "false",
+    acknowledgeLabel: core.getInput("acknowledge-label") || "hotspot-acknowledge",
     githubToken: core.getInput("github-token"),
   };
 }

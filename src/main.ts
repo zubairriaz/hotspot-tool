@@ -17,7 +17,6 @@ async function run(): Promise<void> {
   core.info(
     `hotspot-tool config: enforcement=${config.enforcementLevel}, window=${config.historyWindowDays}d, threshold=${config.hotspotThreshold}th-pct, change-freq-min=${config.changeFreqMin}, complexity-min=${config.complexityMin}, module=${config.moduleDefinition}, languages=${Array.isArray(config.languages) ? config.languages.join(",") : config.languages}`,
   );
-  // On a runner GITHUB_WORKSPACE is the checked-out repo root; fall back to cwd.
   const cwd = process.env.GITHUB_WORKSPACE || process.cwd();
 
   if (!(await isGitRepo(cwd))) {
@@ -43,8 +42,7 @@ async function run(): Promise<void> {
   const analysis = rankHotspots(histories, config, coupling, complexityByFile);
   core.info(`Found ${analysis.hotspots.length} hotspot(s) across ${analysis.totalFilesAnalyzed} files.`);
 
-  // Gate scope: only files this PR touches. On non-PR events the touched set is
-  // empty, so the run reports repo-wide hotspots without gating anything.
+  // Gate scope: only files this PR touches.
   let touched: string[] = [];
   const pr = github.context.payload.pull_request;
   if (pr?.base?.sha && pr?.head?.sha) {
@@ -52,7 +50,24 @@ async function run(): Promise<void> {
     core.info(`PR touches ${touched.length} file(s).`);
   }
 
-  const gate = evaluateGate(analysis, touched, config, distanceByFile);
+  // Escape hatch: if the PR carries the acknowledge label, downgrade block → warn.
+  let acknowledged = false;
+  if (pr && config.acknowledgeLabel) {
+    const labels: string[] = ((pr.labels as { name: string }[]) || []).map((l) => l.name);
+    if (labels.includes(config.acknowledgeLabel)) {
+      acknowledged = true;
+      core.info(
+        `PR has label "${config.acknowledgeLabel}" — block enforcement downgraded to warn. Remove the label once the hotspots are addressed.`,
+      );
+    }
+  }
+
+  const gateConfig =
+    acknowledged && config.enforcementLevel === "block"
+      ? { ...config, enforcementLevel: "warn" as const }
+      : config;
+
+  const gate = evaluateGate(analysis, touched, gateConfig, distanceByFile);
 
   // Outputs
   core.setOutput("hotspot-count", analysis.hotspots.length);
@@ -66,28 +81,49 @@ async function run(): Promise<void> {
     core.warning(`Could not write job summary: ${(err as Error).message}`);
   }
 
-  // JSON artifact (always, unless opted out)
+  // JSON artifact
   if (config.generateArtifact) {
     await writeArtifact(analysis, gate, config, cwd);
   }
 
-  // PR comment — skipped in "info" mode (job summary only) and on non-PR events
+  // PR comment — skipped in "info" mode and on non-PR events
   if (config.comment && pr && config.enforcementLevel !== "info") {
-    const body = renderPrComment(analysis, gate, config, behavioralOnly);
+    const body = renderPrComment(analysis, gate, config, behavioralOnly, acknowledged);
     await upsertPrComment(body, config.githubToken);
   }
 
-  // Report reasons in the log
+  // Log reasons
   if (gate.reasons.length > 0) {
     core.info("Gate findings:");
     for (const r of gate.reasons) core.info(`  • ${r}`);
+  }
+
+  // Inline PR diff annotations — one per violated file so developers see them in context
+  if (gate.status !== "pass") {
+    for (const h of gate.touchedHotspots) {
+      const cxNote = h.complexity !== null ? `, complexity ${h.complexity}` : "";
+      core.error(
+        `Hotspot — ${h.percentile.toFixed(0)}th percentile, ${h.commitCount} commits${cxNote}. ` +
+          `Reduce complexity or improve test coverage before merging. ` +
+          `Add the "${config.acknowledgeLabel}" label to downgrade to warn while you plan the fix.`,
+        { file: h.path, title: "🔥 Hotspot" },
+      );
+    }
+    for (const v of gate.distanceViolations) {
+      core.error(
+        `Martin's Distance D=${v.distance.toFixed(2)} exceeds distance-max (${gateConfig.distanceMax}). ` +
+          `Zone of Pain if stable+concrete: extract an interface. ` +
+          `Zone of Uselessness if abstract+unstable: freeze the API.`,
+        { file: v.path, title: "📐 Distance violation" },
+      );
+    }
   }
 
   if (gate.status === "fail") {
     core.setFailed(
       `Hotspot gate failed: this PR touches ${gate.touchedHotspots.length} hotspot file(s)` +
         (gate.distanceViolations.length ? ` and ${gate.distanceViolations.length} distance violation(s)` : "") +
-        ". Improve them or lower enforcement-level to `warn`.",
+        `. Improve them or add the "${config.acknowledgeLabel}" label to acknowledge and proceed.`,
     );
   }
 }

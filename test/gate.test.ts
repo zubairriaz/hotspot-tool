@@ -21,6 +21,7 @@ function makeConfig(overrides: Partial<Config> = {}): Config {
     comment: true,
     generateMap: true,
     generateArtifact: true,
+    acknowledgeLabel: "hotspot-acknowledge",
     githubToken: "",
     ...overrides,
   };

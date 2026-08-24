@@ -30035,6 +30035,7 @@ function loadConfig() {
         comment: (core.getInput("comment") || "true").toLowerCase() !== "false",
         generateMap: (core.getInput("generate-map") || "true").toLowerCase() !== "false",
         generateArtifact: (core.getInput("generate-artifact") || "true").toLowerCase() !== "false",
+        acknowledgeLabel: core.getInput("acknowledge-label") || "hotspot-acknowledge",
         githubToken: core.getInput("github-token"),
     };
 }
@@ -30540,7 +30541,6 @@ const engine_1 = __nccwpck_require__(2970);
 async function run() {
     const config = (0, config_1.loadConfig)();
     core.info(`hotspot-tool config: enforcement=${config.enforcementLevel}, window=${config.historyWindowDays}d, threshold=${config.hotspotThreshold}th-pct, change-freq-min=${config.changeFreqMin}, complexity-min=${config.complexityMin}, module=${config.moduleDefinition}, languages=${Array.isArray(config.languages) ? config.languages.join(",") : config.languages}`);
-    // On a runner GITHUB_WORKSPACE is the checked-out repo root; fall back to cwd.
     const cwd = process.env.GITHUB_WORKSPACE || process.cwd();
     if (!(await (0, exec_1.isGitRepo)(cwd))) {
         core.setFailed("Not a git repository. hotspot-tool needs git history — check out the repo before this step.");
@@ -30559,15 +30559,26 @@ async function run() {
     const behavioralOnly = complexityByFile.size === 0;
     const analysis = (0, hotspot_1.rankHotspots)(histories, config, coupling, complexityByFile);
     core.info(`Found ${analysis.hotspots.length} hotspot(s) across ${analysis.totalFilesAnalyzed} files.`);
-    // Gate scope: only files this PR touches. On non-PR events the touched set is
-    // empty, so the run reports repo-wide hotspots without gating anything.
+    // Gate scope: only files this PR touches.
     let touched = [];
     const pr = github.context.payload.pull_request;
     if (pr?.base?.sha && pr?.head?.sha) {
         touched = await (0, changed_1.changedFiles)(pr.base.sha, pr.head.sha, cwd);
         core.info(`PR touches ${touched.length} file(s).`);
     }
-    const gate = (0, gate_1.evaluateGate)(analysis, touched, config, distanceByFile);
+    // Escape hatch: if the PR carries the acknowledge label, downgrade block → warn.
+    let acknowledged = false;
+    if (pr && config.acknowledgeLabel) {
+        const labels = (pr.labels || []).map((l) => l.name);
+        if (labels.includes(config.acknowledgeLabel)) {
+            acknowledged = true;
+            core.info(`PR has label "${config.acknowledgeLabel}" — block enforcement downgraded to warn. Remove the label once the hotspots are addressed.`);
+        }
+    }
+    const gateConfig = acknowledged && config.enforcementLevel === "block"
+        ? { ...config, enforcementLevel: "warn" }
+        : config;
+    const gate = (0, gate_1.evaluateGate)(analysis, touched, gateConfig, distanceByFile);
     // Outputs
     core.setOutput("hotspot-count", analysis.hotspots.length);
     core.setOutput("touched-hotspot-count", gate.touchedHotspots.length);
@@ -30579,25 +30590,39 @@ async function run() {
     catch (err) {
         core.warning(`Could not write job summary: ${err.message}`);
     }
-    // JSON artifact (always, unless opted out)
+    // JSON artifact
     if (config.generateArtifact) {
         await (0, artifact_1.writeArtifact)(analysis, gate, config, cwd);
     }
-    // PR comment — skipped in "info" mode (job summary only) and on non-PR events
+    // PR comment — skipped in "info" mode and on non-PR events
     if (config.comment && pr && config.enforcementLevel !== "info") {
-        const body = (0, markdown_1.renderPrComment)(analysis, gate, config, behavioralOnly);
+        const body = (0, markdown_1.renderPrComment)(analysis, gate, config, behavioralOnly, acknowledged);
         await (0, pr_comment_1.upsertPrComment)(body, config.githubToken);
     }
-    // Report reasons in the log
+    // Log reasons
     if (gate.reasons.length > 0) {
         core.info("Gate findings:");
         for (const r of gate.reasons)
             core.info(`  • ${r}`);
     }
+    // Inline PR diff annotations — one per violated file so developers see them in context
+    if (gate.status !== "pass") {
+        for (const h of gate.touchedHotspots) {
+            const cxNote = h.complexity !== null ? `, complexity ${h.complexity}` : "";
+            core.error(`Hotspot — ${h.percentile.toFixed(0)}th percentile, ${h.commitCount} commits${cxNote}. ` +
+                `Reduce complexity or improve test coverage before merging. ` +
+                `Add the "${config.acknowledgeLabel}" label to downgrade to warn while you plan the fix.`, { file: h.path, title: "🔥 Hotspot" });
+        }
+        for (const v of gate.distanceViolations) {
+            core.error(`Martin's Distance D=${v.distance.toFixed(2)} exceeds distance-max (${gateConfig.distanceMax}). ` +
+                `Zone of Pain if stable+concrete: extract an interface. ` +
+                `Zone of Uselessness if abstract+unstable: freeze the API.`, { file: v.path, title: "📐 Distance violation" });
+        }
+    }
     if (gate.status === "fail") {
         core.setFailed(`Hotspot gate failed: this PR touches ${gate.touchedHotspots.length} hotspot file(s)` +
             (gate.distanceViolations.length ? ` and ${gate.distanceViolations.length} distance violation(s)` : "") +
-            ". Improve them or lower enforcement-level to `warn`.");
+            `. Improve them or add the "${config.acknowledgeLabel}" label to acknowledge and proceed.`);
     }
 }
 run().catch((err) => {
@@ -30706,45 +30731,104 @@ const STATUS_BADGE = {
 function pct(n) {
     return `${n.toFixed(0)}%`;
 }
-/** Build the PR comment body (the hero artifact). */
-function renderPrComment(analysis, gate, config, behavioralOnly) {
+function complexityCell(h) {
+    if (h.complexity === null)
+        return "—";
+    if (h.complexity >= 30)
+        return `**${h.complexity}** 🔴`;
+    if (h.complexity >= 15)
+        return `**${h.complexity}** 🟡`;
+    return `${h.complexity}`;
+}
+function whatToDo(hotspots, distanceViolations, distanceMax, acknowledged) {
+    const lines = [];
+    lines.push("<details><summary>🛠 What should I do?</summary>");
+    lines.push("");
+    if (acknowledged) {
+        lines.push("> ⚠️ **Acknowledged** — the `hotspot-acknowledge` label is present, so the block gate is downgraded to warn. Remove the label once you have a plan to address these files.");
+        lines.push("");
+    }
+    for (const h of hotspots) {
+        lines.push(`**\`${h.path}\`**`);
+        const tips = [];
+        if (h.complexity !== null && h.complexity >= 15) {
+            tips.push(`Cyclomatic complexity is **${h.complexity}** — aim for < 10 per file. Extract large functions into smaller, named helpers. Look for nested \`if\` chains and \`switch\` blocks as the first candidates.`);
+        }
+        if (h.bugfixRatio > 0.3) {
+            tips.push(`Bug-fix ratio is **${pct(h.bugfixRatio * 100)}** — this file breaks often. Add regression tests for the scenarios that triggered past fixes before adding new behaviour.`);
+        }
+        if (h.authorCount === 1 && h.commitCount > 8) {
+            tips.push(`Only **1 author** has touched this file despite ${h.commitCount} commits — consider a pairing session or code review pass to spread knowledge and catch hidden complexity.`);
+        }
+        if (tips.length === 0) {
+            tips.push(`This file is changed frequently (${h.commitCount} commits, ${pct(h.percentile)} percentile). Apply the **Boy Scout Rule**: leave it a little cleaner than you found it — rename a confusing variable, extract one function, or add one missing test.`);
+        }
+        for (const tip of tips)
+            lines.push(`- ${tip}`);
+        lines.push("");
+    }
+    if (distanceViolations.length > 0) {
+        lines.push("**Martin's Distance violations — architectural guidance**");
+        lines.push("");
+        lines.push("Martin's Distance D = |Abstractness + Instability − 1|. A value near 1 means the file sits in a danger zone:");
+        lines.push("- **Zone of Pain** (D≈1, stable + concrete): many files depend on this one, but it has no abstractions. Every change here ripples everywhere. Fix: extract an interface or trait that dependents rely on instead of the concrete implementation.");
+        lines.push("- **Zone of Uselessness** (D≈1, unstable + abstract): lots of abstractions that keep changing. Fix: stabilise the API — freeze the interface and push volatility into implementations.");
+        lines.push("");
+        for (const v of distanceViolations) {
+            lines.push(`- \`${v.path}\` — D \`${v.distance.toFixed(2)}\` > \`distance-max ${distanceMax}\`. Introduce an abstraction layer or reduce the number of direct dependents.`);
+        }
+        lines.push("");
+    }
+    lines.push("**Need more time?** Add the `hotspot-acknowledge` label to this PR to downgrade `block` → `warn` while you plan the cleanup. Remove the label once addressed.");
+    lines.push("");
+    lines.push("</details>");
+    return lines;
+}
+/** Build the PR comment body. */
+function renderPrComment(analysis, gate, config, behavioralOnly, acknowledged = false) {
     const lines = [];
     lines.push(exports.COMMENT_MARKER);
     lines.push("## 🔥 Hotspot report");
     lines.push("");
-    lines.push(`${STATUS_BADGE[gate.status]} — analyzed ${analysis.totalFilesAnalyzed} files over the last ${analysis.windowDays} days · enforcement: \`${config.enforcementLevel}\``);
+    const acknowledgedNote = acknowledged ? " · _gate acknowledged_" : "";
+    lines.push(`${STATUS_BADGE[gate.status]} — analyzed ${analysis.totalFilesAnalyzed} files over the last ${analysis.windowDays} days · enforcement: \`${config.enforcementLevel}\`${acknowledgedNote}`);
     lines.push("");
     if (gate.touchedHotspots.length === 0 && gate.distanceViolations.length === 0) {
         lines.push("No hotspots touched by this PR. Nice — nothing rotting here. 🌱");
     }
     else {
-        lines.push(`### This PR touches ${gate.touchedHotspots.length} hotspot file(s)`);
-        lines.push("");
-        lines.push("| File | Percentile | Commits | Authors | Bug-fix ratio |");
-        lines.push("|---|---|---|---|---|");
-        for (const h of gate.touchedHotspots) {
-            lines.push(`| \`${h.path}\` | ${pct(h.percentile)} | ${h.commitCount} | ${h.authorCount} | ${pct(h.bugfixRatio * 100)} |`);
-        }
-        lines.push("");
-        if (gate.distanceViolations.length > 0) {
-            lines.push("**Martin's Distance gate:**");
-            for (const v of gate.distanceViolations) {
-                lines.push(`- \`${v.path}\` — D ${v.distance.toFixed(2)} exceeds \`distance-max\` ${config.distanceMax}`);
+        if (gate.touchedHotspots.length > 0) {
+            lines.push(`### This PR touches ${gate.touchedHotspots.length} hotspot file(s)`);
+            lines.push("");
+            lines.push("| File | Percentile | Commits | Authors | Bug-fix ratio | Complexity |");
+            lines.push("|---|---|---|---|---|---|");
+            for (const h of gate.touchedHotspots) {
+                lines.push(`| \`${h.path}\` | ${pct(h.percentile)} | ${h.commitCount} | ${h.authorCount} | ${pct(h.bugfixRatio * 100)} | ${complexityCell(h)} |`);
             }
             lines.push("");
         }
-        lines.push("> These files are both **messy** and **frequently changed** — the intersection where debt actually costs money. Leave them a little better than you found them.");
+        if (gate.distanceViolations.length > 0) {
+            lines.push("### Martin's Distance violations");
+            lines.push("");
+            lines.push("| File | D score | Threshold |");
+            lines.push("|---|---|---|");
+            for (const v of gate.distanceViolations) {
+                lines.push(`| \`${v.path}\` | \`${v.distance.toFixed(2)}\` | \`${config.distanceMax}\` |`);
+            }
+            lines.push("");
+        }
+        lines.push(...whatToDo(gate.touchedHotspots, gate.distanceViolations, config.distanceMax, acknowledged));
     }
     lines.push("");
     lines.push("<details><summary>Top hotspots across the whole repo</summary>");
     lines.push("");
-    lines.push("| Rank | File | Percentile | Commits | Authors |");
-    lines.push("|---|---|---|---|---|");
+    lines.push("| Rank | File | Percentile | Commits | Authors | Complexity |");
+    lines.push("|---|---|---|---|---|---|");
     analysis.hotspots.slice(0, 10).forEach((h, i) => {
-        lines.push(`| ${i + 1} | \`${h.path}\` | ${pct(h.percentile)} | ${h.commitCount} | ${h.authorCount} |`);
+        lines.push(`| ${i + 1} | \`${h.path}\` | ${pct(h.percentile)} | ${h.commitCount} | ${h.authorCount} | ${complexityCell(h)} |`);
     });
     if (analysis.hotspots.length === 0)
-        lines.push("| — | _none above thresholds_ | | | |");
+        lines.push("| — | _none above thresholds_ | | | | |");
     lines.push("");
     lines.push("</details>");
     if (behavioralOnly) {
@@ -30755,7 +30839,7 @@ function renderPrComment(analysis, gate, config, behavioralOnly) {
     lines.push("<sub>🔥 Generated by hotspot-tool — mess × activity, measured in your own runner.</sub>");
     return lines.join("\n");
 }
-/** Build the full job summary (complete breakdown for the Actions run). */
+/** Build the full job summary. */
 function renderJobSummary(analysis, gate, config) {
     const lines = [];
     lines.push("# 🔥 Hotspot analysis");
@@ -30768,10 +30852,10 @@ function renderJobSummary(analysis, gate, config) {
     lines.push("");
     if (analysis.hotspots.length > 0) {
         lines.push("## Repo hotspots");
-        lines.push("| Rank | File | Percentile | Commits | Authors | Bug-fix ratio |");
-        lines.push("|---|---|---|---|---|---|");
+        lines.push("| Rank | File | Percentile | Commits | Authors | Bug-fix ratio | Complexity |");
+        lines.push("|---|---|---|---|---|---|---|");
         analysis.hotspots.slice(0, 25).forEach((h, i) => {
-            lines.push(`| ${i + 1} | \`${h.path}\` | ${pct(h.percentile)} | ${h.commitCount} | ${h.authorCount} | ${pct(h.bugfixRatio * 100)} |`);
+            lines.push(`| ${i + 1} | \`${h.path}\` | ${pct(h.percentile)} | ${h.commitCount} | ${h.authorCount} | ${pct(h.bugfixRatio * 100)} | ${complexityCell(h)} |`);
         });
         lines.push("");
     }
@@ -30781,6 +30865,15 @@ function renderJobSummary(analysis, gate, config) {
         lines.push("|---|---|---|---|");
         for (const c of analysis.coupling.slice(0, 15)) {
             lines.push(`| \`${c.a}\` | \`${c.b}\` | ${c.sharedCommits} | ${pct(c.degree * 100)} |`);
+        }
+        lines.push("");
+    }
+    if (gate.distanceViolations.length > 0) {
+        lines.push("## Martin's Distance violations");
+        lines.push("| File | D score | Threshold |");
+        lines.push("|---|---|---|");
+        for (const v of gate.distanceViolations) {
+            lines.push(`| \`${v.path}\` | \`${v.distance.toFixed(2)}\` | \`${config.distanceMax}\` |`);
         }
         lines.push("");
     }
