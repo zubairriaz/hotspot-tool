@@ -7,6 +7,10 @@ The `v1` tag always points at the latest `1.x` release; pin a specific `vX.Y.Z` 
 
 ---
 
+## v1.4.2 — 2026-08-24
+
+- chore: resolve merge conflict in generated sourcemap (48f9cec)
+
 ## v1.4.1 — 2026-08-24
 
 - feat: inline resolvable review comments per violated file (v1.4.0) (9e8337e)
