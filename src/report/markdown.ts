@@ -92,6 +92,63 @@ function whatToDo(hotspots: ScoredFile[], distanceViolations: DistanceViolation[
   return lines;
 }
 
+/** Inline review comment body for a hotspot violation (shown in Files Changed, resolvable). */
+export function renderHotspotInline(h: ScoredFile, config: Config): string {
+  const lines: string[] = [];
+  lines.push(`### 🔥 Hotspot — ${h.percentile.toFixed(0)}th percentile`);
+  lines.push("");
+  lines.push("| Metric | Value |");
+  lines.push("|---|---|");
+  lines.push(`| Commits (${config.historyWindowDays}d window) | **${h.commitCount}** |`);
+  lines.push(`| Authors | ${h.authorCount} |`);
+  lines.push(`| Bug-fix ratio | ${pct(h.bugfixRatio * 100)} |`);
+  if (h.complexity !== null) {
+    lines.push(`| Complexity | ${complexityCell(h)} |`);
+  }
+  lines.push("");
+
+  const tips: string[] = [];
+  if (h.complexity !== null && h.complexity >= 15) {
+    tips.push(`Complexity **${h.complexity}** — aim for < 10. Extract large methods into smaller, named helpers.`);
+  }
+  if (h.bugfixRatio > 0.3) {
+    tips.push(`Bug-fix ratio **${pct(h.bugfixRatio * 100)}** — add regression tests before adding new behaviour.`);
+  }
+  if (h.authorCount === 1 && h.commitCount > 8) {
+    tips.push(`Only **1 author** despite ${h.commitCount} commits — pair on this file to spread knowledge and catch hidden complexity.`);
+  }
+  if (tips.length === 0) {
+    tips.push(`Changed frequently (${h.commitCount} commits). Leave it a little cleaner than you found it — rename a confusing variable, extract one function, or add one missing test.`);
+  }
+  for (const t of tips) lines.push(`**Tip:** ${t}`);
+  lines.push("");
+  lines.push(`> **Need more time?** Add the \`${config.acknowledgeLabel}\` label to this PR to downgrade \`block → warn\` while you plan the cleanup. Resolve this comment once addressed.`);
+  return lines.join("\n");
+}
+
+/** Inline review comment body for a Martin's Distance violation. */
+export function renderDistanceInline(v: DistanceViolation, config: Config): string {
+  const lines: string[] = [];
+  const { badge, zone } = zoneLabel(v);
+  lines.push(`### 📐 ${badge} — D=${v.distance.toFixed(2)}`);
+  lines.push("");
+  lines.push("| Metric | Value |");
+  lines.push("|---|---|");
+  lines.push(`| Abstractness (A) | ${v.abstractness.toFixed(2)} |`);
+  lines.push(`| Instability (I) | ${v.instability.toFixed(2)} |`);
+  lines.push(`| Distance (D) | **${v.distance.toFixed(2)}** |`);
+  lines.push(`| Threshold | \`${config.distanceMax}\` |`);
+  lines.push("");
+  const fix =
+    zone === "pain"
+      ? `**Zone of Pain** — stable and concrete (A≈0, I≈0). Extract an interface so callers depend on the abstraction, not this implementation. Resolve this comment once the interface is extracted.`
+      : zone === "useless"
+      ? `**Zone of Uselessness** — abstract but unstable (A≈1, I≈1). Freeze the API contract and push volatile behaviour into concrete implementations. Resolve once the API is stable.`
+      : `**Off the Main Sequence** — add abstractions or reduce coupling to bring A + I closer to 1. Resolve once D is within the \`${config.distanceMax}\` threshold.`;
+  lines.push(fix);
+  return lines.join("\n");
+}
+
 /** Build the PR comment body. */
 export function renderPrComment(
   analysis: AnalysisResult,

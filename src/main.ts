@@ -7,8 +7,9 @@ import { analyzeCoupling } from "./git/coupling";
 import { changedFiles } from "./git/changed";
 import { rankHotspots } from "./hotspot";
 import { evaluateGate } from "./gate";
-import { renderPrComment, renderJobSummary } from "./report/markdown";
+import { renderPrComment, renderJobSummary, renderHotspotInline, renderDistanceInline } from "./report/markdown";
 import { upsertPrComment } from "./report/pr-comment";
+import { upsertInlineComments, type InlineComment } from "./report/pr-review";
 import { writeArtifact } from "./report/artifact";
 import { runStaticEngine } from "./static/engine";
 
@@ -89,44 +90,32 @@ async function run(): Promise<void> {
     await writeArtifact(analysis, gate, config, cwd);
   }
 
-  // PR comment — skipped in "info" mode and on non-PR events
+  // PR comment + per-file inline review comments (resolvable in Files Changed tab)
   if (config.comment && pr && config.enforcementLevel !== "info") {
     const body = renderPrComment(analysis, gate, config, behavioralOnly, acknowledged);
     await upsertPrComment(body, config.githubToken);
+
+    // Build one inline comment per violated file (combine hotspot + distance when both apply)
+    const inlineByFile = new Map<string, InlineComment>();
+    for (const h of gate.touchedHotspots) {
+      inlineByFile.set(h.path, { path: h.path, body: renderHotspotInline(h, gateConfig) });
+    }
+    for (const v of gate.distanceViolations) {
+      const distancePart = renderDistanceInline(v, gateConfig);
+      const existing = inlineByFile.get(v.path);
+      if (existing) {
+        existing.body += `\n\n---\n\n${distancePart}`;
+      } else {
+        inlineByFile.set(v.path, { path: v.path, body: distancePart });
+      }
+    }
+    await upsertInlineComments([...inlineByFile.values()], config.githubToken);
   }
 
   // Log reasons
   if (gate.reasons.length > 0) {
     core.info("Gate findings:");
     for (const r of gate.reasons) core.info(`  • ${r}`);
-  }
-
-  // Inline PR diff annotations — one per violated file so developers see them in context
-  if (gate.status !== "pass") {
-    for (const h of gate.touchedHotspots) {
-      const cxNote = h.complexity !== null ? `, complexity ${h.complexity}` : "";
-      core.error(
-        `Hotspot — ${h.percentile.toFixed(0)}th percentile, ${h.commitCount} commits${cxNote}. ` +
-          `Reduce complexity or improve test coverage before merging. ` +
-          `Add the "${config.acknowledgeLabel}" label to downgrade to warn while you plan the fix.`,
-        { file: h.path, title: "🔥 Hotspot" },
-      );
-    }
-    for (const v of gate.distanceViolations) {
-      const A = v.abstractness.toFixed(2);
-      const I = v.instability.toFixed(2);
-      const isZonePain = v.abstractness < 0.5 && v.instability < 0.5;
-      const isZoneUseless = v.abstractness >= 0.5 && v.instability >= 0.5;
-      const zone = isZonePain
-        ? `Zone of Pain (A=${A}, I=${I}) — stable and concrete. Extract an interface so callers depend on the abstraction, not this implementation.`
-        : isZoneUseless
-        ? `Zone of Uselessness (A=${A}, I=${I}) — abstract but unstable. Freeze the API contract and push volatile behaviour into concrete implementations.`
-        : `Off the Main Sequence (A=${A}, I=${I}). Add abstractions or reduce coupling to bring A + I closer to 1.`;
-      core.error(
-        `Martin's Distance D=${v.distance.toFixed(2)} exceeds distance-max (${gateConfig.distanceMax}). ${zone}`,
-        { file: v.path, title: "📐 Distance violation" },
-      );
-    }
   }
 
   if (gate.status === "fail") {

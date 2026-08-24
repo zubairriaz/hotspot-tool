@@ -30541,6 +30541,7 @@ const hotspot_1 = __nccwpck_require__(7972);
 const gate_1 = __nccwpck_require__(1956);
 const markdown_1 = __nccwpck_require__(4285);
 const pr_comment_1 = __nccwpck_require__(1914);
+const pr_review_1 = __nccwpck_require__(4383);
 const artifact_1 = __nccwpck_require__(954);
 const engine_1 = __nccwpck_require__(2970);
 async function run() {
@@ -30602,37 +30603,32 @@ async function run() {
     if (config.generateArtifact) {
         await (0, artifact_1.writeArtifact)(analysis, gate, config, cwd);
     }
-    // PR comment — skipped in "info" mode and on non-PR events
+    // PR comment + per-file inline review comments (resolvable in Files Changed tab)
     if (config.comment && pr && config.enforcementLevel !== "info") {
         const body = (0, markdown_1.renderPrComment)(analysis, gate, config, behavioralOnly, acknowledged);
         await (0, pr_comment_1.upsertPrComment)(body, config.githubToken);
+        // Build one inline comment per violated file (combine hotspot + distance when both apply)
+        const inlineByFile = new Map();
+        for (const h of gate.touchedHotspots) {
+            inlineByFile.set(h.path, { path: h.path, body: (0, markdown_1.renderHotspotInline)(h, gateConfig) });
+        }
+        for (const v of gate.distanceViolations) {
+            const distancePart = (0, markdown_1.renderDistanceInline)(v, gateConfig);
+            const existing = inlineByFile.get(v.path);
+            if (existing) {
+                existing.body += `\n\n---\n\n${distancePart}`;
+            }
+            else {
+                inlineByFile.set(v.path, { path: v.path, body: distancePart });
+            }
+        }
+        await (0, pr_review_1.upsertInlineComments)([...inlineByFile.values()], config.githubToken);
     }
     // Log reasons
     if (gate.reasons.length > 0) {
         core.info("Gate findings:");
         for (const r of gate.reasons)
             core.info(`  • ${r}`);
-    }
-    // Inline PR diff annotations — one per violated file so developers see them in context
-    if (gate.status !== "pass") {
-        for (const h of gate.touchedHotspots) {
-            const cxNote = h.complexity !== null ? `, complexity ${h.complexity}` : "";
-            core.error(`Hotspot — ${h.percentile.toFixed(0)}th percentile, ${h.commitCount} commits${cxNote}. ` +
-                `Reduce complexity or improve test coverage before merging. ` +
-                `Add the "${config.acknowledgeLabel}" label to downgrade to warn while you plan the fix.`, { file: h.path, title: "🔥 Hotspot" });
-        }
-        for (const v of gate.distanceViolations) {
-            const A = v.abstractness.toFixed(2);
-            const I = v.instability.toFixed(2);
-            const isZonePain = v.abstractness < 0.5 && v.instability < 0.5;
-            const isZoneUseless = v.abstractness >= 0.5 && v.instability >= 0.5;
-            const zone = isZonePain
-                ? `Zone of Pain (A=${A}, I=${I}) — stable and concrete. Extract an interface so callers depend on the abstraction, not this implementation.`
-                : isZoneUseless
-                    ? `Zone of Uselessness (A=${A}, I=${I}) — abstract but unstable. Freeze the API contract and push volatile behaviour into concrete implementations.`
-                    : `Off the Main Sequence (A=${A}, I=${I}). Add abstractions or reduce coupling to bring A + I closer to 1.`;
-            core.error(`Martin's Distance D=${v.distance.toFixed(2)} exceeds distance-max (${gateConfig.distanceMax}). ${zone}`, { file: v.path, title: "📐 Distance violation" });
-        }
     }
     if (gate.status === "fail") {
         core.setFailed(`Hotspot gate failed: this PR touches ${gate.touchedHotspots.length} hotspot file(s)` +
@@ -30735,6 +30731,8 @@ async function writeArtifact(analysis, gate, config, cwd) {
 
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.COMMENT_MARKER = void 0;
+exports.renderHotspotInline = renderHotspotInline;
+exports.renderDistanceInline = renderDistanceInline;
 exports.renderPrComment = renderPrComment;
 exports.renderJobSummary = renderJobSummary;
 exports.COMMENT_MARKER = "<!-- hotspot-tool:pr-comment -->";
@@ -30809,6 +30807,60 @@ function whatToDo(hotspots, distanceViolations, distanceMax, acknowledged) {
     lines.push("");
     lines.push("</details>");
     return lines;
+}
+/** Inline review comment body for a hotspot violation (shown in Files Changed, resolvable). */
+function renderHotspotInline(h, config) {
+    const lines = [];
+    lines.push(`### 🔥 Hotspot — ${h.percentile.toFixed(0)}th percentile`);
+    lines.push("");
+    lines.push("| Metric | Value |");
+    lines.push("|---|---|");
+    lines.push(`| Commits (${config.historyWindowDays}d window) | **${h.commitCount}** |`);
+    lines.push(`| Authors | ${h.authorCount} |`);
+    lines.push(`| Bug-fix ratio | ${pct(h.bugfixRatio * 100)} |`);
+    if (h.complexity !== null) {
+        lines.push(`| Complexity | ${complexityCell(h)} |`);
+    }
+    lines.push("");
+    const tips = [];
+    if (h.complexity !== null && h.complexity >= 15) {
+        tips.push(`Complexity **${h.complexity}** — aim for < 10. Extract large methods into smaller, named helpers.`);
+    }
+    if (h.bugfixRatio > 0.3) {
+        tips.push(`Bug-fix ratio **${pct(h.bugfixRatio * 100)}** — add regression tests before adding new behaviour.`);
+    }
+    if (h.authorCount === 1 && h.commitCount > 8) {
+        tips.push(`Only **1 author** despite ${h.commitCount} commits — pair on this file to spread knowledge and catch hidden complexity.`);
+    }
+    if (tips.length === 0) {
+        tips.push(`Changed frequently (${h.commitCount} commits). Leave it a little cleaner than you found it — rename a confusing variable, extract one function, or add one missing test.`);
+    }
+    for (const t of tips)
+        lines.push(`**Tip:** ${t}`);
+    lines.push("");
+    lines.push(`> **Need more time?** Add the \`${config.acknowledgeLabel}\` label to this PR to downgrade \`block → warn\` while you plan the cleanup. Resolve this comment once addressed.`);
+    return lines.join("\n");
+}
+/** Inline review comment body for a Martin's Distance violation. */
+function renderDistanceInline(v, config) {
+    const lines = [];
+    const { badge, zone } = zoneLabel(v);
+    lines.push(`### 📐 ${badge} — D=${v.distance.toFixed(2)}`);
+    lines.push("");
+    lines.push("| Metric | Value |");
+    lines.push("|---|---|");
+    lines.push(`| Abstractness (A) | ${v.abstractness.toFixed(2)} |`);
+    lines.push(`| Instability (I) | ${v.instability.toFixed(2)} |`);
+    lines.push(`| Distance (D) | **${v.distance.toFixed(2)}** |`);
+    lines.push(`| Threshold | \`${config.distanceMax}\` |`);
+    lines.push("");
+    const fix = zone === "pain"
+        ? `**Zone of Pain** — stable and concrete (A≈0, I≈0). Extract an interface so callers depend on the abstraction, not this implementation. Resolve this comment once the interface is extracted.`
+        : zone === "useless"
+            ? `**Zone of Uselessness** — abstract but unstable (A≈1, I≈1). Freeze the API contract and push volatile behaviour into concrete implementations. Resolve once the API is stable.`
+            : `**Off the Main Sequence** — add abstractions or reduce coupling to bring A + I closer to 1. Resolve once D is within the \`${config.distanceMax}\` threshold.`;
+    lines.push(fix);
+    return lines.join("\n");
 }
 /** Build the PR comment body. */
 function renderPrComment(analysis, gate, config, behavioralOnly, acknowledged = false) {
@@ -30993,6 +31045,140 @@ async function upsertPrComment(body, token) {
     catch (err) {
         core.warning(`Failed to post PR comment: ${err.message}`);
     }
+}
+
+
+/***/ }),
+
+/***/ 4383:
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
+
+"use strict";
+
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.INLINE_MARKER = void 0;
+exports.upsertInlineComments = upsertInlineComments;
+const core = __importStar(__nccwpck_require__(7484));
+const github = __importStar(__nccwpck_require__(3228));
+exports.INLINE_MARKER = "<!-- hotspot-tool:inline -->";
+/**
+ * Post one resolvable inline review comment per violated file on the PR's
+ * Files Changed tab. On each push, stale comments from the previous run are
+ * deleted first so the thread stays clean.
+ *
+ * Tries `subject_type:"file"` (no line needed) first; falls back to line 1
+ * if the API rejects it.
+ */
+async function upsertInlineComments(comments, token) {
+    const ctx = github.context;
+    const pr = ctx.payload.pull_request;
+    if (!pr) {
+        core.info("Not a pull_request event — skipping inline review comments.");
+        return;
+    }
+    if (!token) {
+        core.warning("No github-token provided — cannot post inline review comments.");
+        return;
+    }
+    const octokit = github.getOctokit(token);
+    const { owner, repo } = ctx.repo;
+    const pull_number = pr.number;
+    const commit_id = pr.head.sha;
+    // Remove stale inline comments from previous runs
+    try {
+        const existing = await octokit.paginate(octokit.rest.pulls.listReviewComments, {
+            owner,
+            repo,
+            pull_number,
+            per_page: 100,
+        });
+        const stale = existing.filter((c) => c.body?.includes(exports.INLINE_MARKER));
+        await Promise.all(stale.map((c) => octokit.rest.pulls.deleteReviewComment({ owner, repo, comment_id: c.id })));
+        if (stale.length > 0)
+            core.info(`Removed ${stale.length} stale inline comment(s).`);
+    }
+    catch (err) {
+        core.warning(`Could not clean up stale inline comments: ${err.message}`);
+    }
+    if (comments.length === 0)
+        return;
+    // Post one resolvable comment per violated file
+    let posted = 0;
+    for (const c of comments) {
+        const body = `${exports.INLINE_MARKER}\n${c.body}`;
+        let ok = false;
+        // Prefer file-level comment (not tied to a specific diff line)
+        try {
+            await octokit.request("POST /repos/{owner}/{repo}/pulls/{pull_number}/comments", {
+                owner,
+                repo,
+                pull_number,
+                commit_id,
+                path: c.path,
+                subject_type: "file",
+                body,
+            });
+            ok = true;
+        }
+        catch {
+            // fall through to line-based fallback
+        }
+        if (!ok) {
+            try {
+                await octokit.rest.pulls.createReviewComment({
+                    owner,
+                    repo,
+                    pull_number,
+                    commit_id,
+                    path: c.path,
+                    line: 1,
+                    side: "RIGHT",
+                    body,
+                });
+                ok = true;
+            }
+            catch (err) {
+                core.warning(`Could not post inline comment on ${c.path}: ${err.message}`);
+            }
+        }
+        if (ok)
+            posted++;
+    }
+    if (posted > 0)
+        core.info(`Posted ${posted} inline review comment(s).`);
 }
 
 
