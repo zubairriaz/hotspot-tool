@@ -7,8 +7,7 @@ import { analyzeCoupling } from "./git/coupling";
 import { changedFiles } from "./git/changed";
 import { rankHotspots } from "./hotspot";
 import { evaluateGate } from "./gate";
-import { renderPrComment, renderJobSummary, renderHotspotInline, renderDistanceInline } from "./report/markdown";
-import { upsertPrComment } from "./report/pr-comment";
+import { renderJobSummary, renderHotspotInline, renderDistanceInline } from "./report/markdown";
 import { upsertInlineComments, type InlineComment } from "./report/pr-review";
 import { writeArtifact } from "./report/artifact";
 import { runStaticEngine } from "./static/engine";
@@ -90,12 +89,10 @@ async function run(): Promise<void> {
     await writeArtifact(analysis, gate, config, cwd);
   }
 
-  // PR comment + per-file inline review comments (resolvable in Files Changed tab)
+  // Per-file inline review comments — one per violated file, resolvable in Files Changed tab.
+  // Old comments from previous runs are deleted before new ones are posted.
+  // Skipped in "info" mode and on non-PR events.
   if (config.comment && pr && config.enforcementLevel !== "info") {
-    const body = renderPrComment(analysis, gate, config, behavioralOnly, acknowledged);
-    await upsertPrComment(body, config.githubToken);
-
-    // Build one inline comment per violated file (combine hotspot + distance when both apply)
     const inlineByFile = new Map<string, InlineComment>();
     for (const h of gate.touchedHotspots) {
       inlineByFile.set(h.path, { path: h.path, body: renderHotspotInline(h, gateConfig) });

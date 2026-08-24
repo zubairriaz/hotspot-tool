@@ -30540,7 +30540,6 @@ const changed_1 = __nccwpck_require__(5340);
 const hotspot_1 = __nccwpck_require__(7972);
 const gate_1 = __nccwpck_require__(1956);
 const markdown_1 = __nccwpck_require__(4285);
-const pr_comment_1 = __nccwpck_require__(1914);
 const pr_review_1 = __nccwpck_require__(4383);
 const artifact_1 = __nccwpck_require__(954);
 const engine_1 = __nccwpck_require__(2970);
@@ -30603,11 +30602,10 @@ async function run() {
     if (config.generateArtifact) {
         await (0, artifact_1.writeArtifact)(analysis, gate, config, cwd);
     }
-    // PR comment + per-file inline review comments (resolvable in Files Changed tab)
+    // Per-file inline review comments — one per violated file, resolvable in Files Changed tab.
+    // Old comments from previous runs are deleted before new ones are posted.
+    // Skipped in "info" mode and on non-PR events.
     if (config.comment && pr && config.enforcementLevel !== "info") {
-        const body = (0, markdown_1.renderPrComment)(analysis, gate, config, behavioralOnly, acknowledged);
-        await (0, pr_comment_1.upsertPrComment)(body, config.githubToken);
-        // Build one inline comment per violated file (combine hotspot + distance when both apply)
         const inlineByFile = new Map();
         for (const h of gate.touchedHotspots) {
             inlineByFile.set(h.path, { path: h.path, body: (0, markdown_1.renderHotspotInline)(h, gateConfig) });
@@ -30958,93 +30956,6 @@ function renderJobSummary(analysis, gate, config) {
         lines.push("");
     }
     return lines.join("\n");
-}
-
-
-/***/ }),
-
-/***/ 1914:
-/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
-
-"use strict";
-
-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    var desc = Object.getOwnPropertyDescriptor(m, k);
-    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
-      desc = { enumerable: true, get: function() { return m[k]; } };
-    }
-    Object.defineProperty(o, k2, desc);
-}) : (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    o[k2] = m[k];
-}));
-var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
-    Object.defineProperty(o, "default", { enumerable: true, value: v });
-}) : function(o, v) {
-    o["default"] = v;
-});
-var __importStar = (this && this.__importStar) || (function () {
-    var ownKeys = function(o) {
-        ownKeys = Object.getOwnPropertyNames || function (o) {
-            var ar = [];
-            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
-            return ar;
-        };
-        return ownKeys(o);
-    };
-    return function (mod) {
-        if (mod && mod.__esModule) return mod;
-        var result = {};
-        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
-        __setModuleDefault(result, mod);
-        return result;
-    };
-})();
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.upsertPrComment = upsertPrComment;
-const core = __importStar(__nccwpck_require__(7484));
-const github = __importStar(__nccwpck_require__(3228));
-const markdown_1 = __nccwpck_require__(4285);
-/**
- * Post or update the PR comment (sticky: one comment per PR, updated in place so
- * pushes don't spam the thread). No-ops gracefully when not on a pull_request or
- * when no token is available.
- */
-async function upsertPrComment(body, token) {
-    const ctx = github.context;
-    const pr = ctx.payload.pull_request;
-    if (!pr) {
-        core.info("Not a pull_request event — skipping PR comment.");
-        return;
-    }
-    if (!token) {
-        core.warning("No github-token provided — cannot post PR comment.");
-        return;
-    }
-    const octokit = github.getOctokit(token);
-    const { owner, repo } = ctx.repo;
-    const issue_number = pr.number;
-    try {
-        const existing = await octokit.paginate(octokit.rest.issues.listComments, {
-            owner,
-            repo,
-            issue_number,
-            per_page: 100,
-        });
-        const mine = existing.find((c) => c.body?.includes(markdown_1.COMMENT_MARKER));
-        if (mine) {
-            await octokit.rest.issues.updateComment({ owner, repo, comment_id: mine.id, body });
-            core.info(`Updated existing hotspot comment (#${mine.id}).`);
-        }
-        else {
-            await octokit.rest.issues.createComment({ owner, repo, issue_number, body });
-            core.info("Posted new hotspot comment.");
-        }
-    }
-    catch (err) {
-        core.warning(`Failed to post PR comment: ${err.message}`);
-    }
 }
 
 
