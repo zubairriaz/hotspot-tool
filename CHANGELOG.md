@@ -7,6 +7,10 @@ The `v1` tag always points at the latest `1.x` release; pin a specific `vX.Y.Z` 
 
 ---
 
+## v1.3.3 — 2026-08-24
+
+- chore: merge release auto-bump, keep new dist (4f62f52)
+
 ## v1.3.2 — 2026-08-24
 
 - feat: extend to Kotlin/Swift/PHP/Ruby/C++/Scala + default excludes + DX improvements (v1.3.1) (210aae3)
