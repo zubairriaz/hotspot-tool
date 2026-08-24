@@ -1,4 +1,4 @@
-name: "Hotspot Tool"
+name: "Code Rot Hotspots"
 description: "Finds where your codebase is actively rotting — the intersection of messy and frequently-changed code — and pushes teams to leave hotspots better than they found them."
 author: "hotspot-tool"
 branding:
