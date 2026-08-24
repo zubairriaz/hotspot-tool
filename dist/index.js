@@ -31046,12 +31046,33 @@ async function upsertInlineComments(comments, token) {
     }
     if (comments.length === 0)
         return;
-    // Post one resolvable comment per violated file
+    // Fetch the PR's changed files so we can comment on an actual diff line
+    const diffLineByPath = new Map();
+    try {
+        const files = await octokit.paginate(octokit.rest.pulls.listFiles, {
+            owner,
+            repo,
+            pull_number,
+            per_page: 100,
+        });
+        for (const f of files) {
+            if (!f.patch)
+                continue;
+            // First @@ hunk header: @@ -old +new[,count] @@ — pick the first line on the RIGHT side
+            const m = f.patch.match(/@@ -\d+(?:,\d+)? \+(\d+)/);
+            if (m)
+                diffLineByPath.set(f.filename, parseInt(m[1], 10));
+        }
+    }
+    catch (err) {
+        core.warning(`Could not fetch PR file list: ${err.message}`);
+    }
+    // Post one resolvable comment per violated file on a real diff line
     let posted = 0;
     for (const c of comments) {
         const body = `${exports.INLINE_MARKER}\n${c.body}`;
+        const line = diffLineByPath.get(c.path) ?? 1;
         let ok = false;
-        // Prefer line 1 — appears inline with the code in the diff, easy to spot and resolve
         try {
             await octokit.rest.pulls.createReviewComment({
                 owner,
@@ -31059,16 +31080,14 @@ async function upsertInlineComments(comments, token) {
                 pull_number,
                 commit_id,
                 path: c.path,
-                line: 1,
+                line,
                 side: "RIGHT",
                 body,
             });
             ok = true;
         }
         catch {
-            // line 1 not in diff — fall back to file-level comment (appears at file header)
-        }
-        if (!ok) {
+            // Hunk line failed — fall back to file-level comment
             try {
                 await octokit.request("POST /repos/{owner}/{repo}/pulls/{pull_number}/comments", {
                     owner,
