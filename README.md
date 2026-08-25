@@ -40,7 +40,7 @@ The absolute floors (2 and 3) exist so a quiet, clean repo does not get nagged a
 
 ## Quick start
 
-Copy [`examples/hotspot.yml`](examples/hotspot.yml) into `.github/workflows/` and you are done. The minimal version:
+Copy [`examples/basic.yml`](examples/basic.yml) into `.github/workflows/` and you are done:
 
 ```yaml
 # .github/workflows/hotspot.yml
@@ -65,7 +65,21 @@ jobs:
 
 > **Why `fetch-depth: 0`?** By default, `actions/checkout` fetches only the last commit (a "shallow clone"). This tool needs full history to measure how often files change, who changes them, and whether commits are bug-fixes. Without it the action warns and the results will be wrong or empty.
 
-More configurations — strict blocking, monorepo, distance gate — are in [`examples/hotspot.yml`](examples/hotspot.yml).
+### Workflow templates
+
+Seven complete, copy-paste-ready workflows in [`examples/`](examples/) — nothing commented out, pick one and drop it in:
+
+| Template | Use it when |
+|---|---|
+| [`basic.yml`](examples/basic.yml) | **Start here.** Comments on hotspots, never fails the build. |
+| [`observe.yml`](examples/observe.yml) | You want evidence before touching anyone's PRs. No comments at all. |
+| [`strict.yml`](examples/strict.yml) | You have tuned the thresholds and are ready to block merges. |
+| [`architecture.yml`](examples/architecture.yml) | You want to gate on Martin's Distance, not just churn. |
+| [`monorepo.yml`](examples/monorepo.yml) | Generated or vendored code is drowning out the signal. |
+| [`tuned.yml`](examples/tuned.yml) | Your commit conventions don't match the default bug-fix patterns. |
+| [`scheduled-report.yml`](examples/scheduled-report.yml) | You want a weekly repo-wide health report, not a PR gate. |
+
+**Adopt in that order.** Run `observe` for a week and check the ranking matches your intuition about where the pain is; move to `basic` for a few weeks and watch for noise complaints; only then `strict`. Going straight to blocking is how this kind of tool gets deleted in week two. See [`examples/README.md`](examples/README.md) for the full rationale.
 
 ---
 
@@ -78,6 +92,10 @@ More configurations — strict blocking, monorepo, distance gate — are in [`ex
 5. **Inline review comments** — posts one comment per violated file in the **Files changed** tab, each with a native GitHub **Resolve** button. Comments from the previous run are deleted first, so the thread never accumulates duplicates.
 
 There is no summary comment in the PR conversation thread — all feedback is attached to the files it concerns.
+
+### Running outside a pull request
+
+On a `schedule`, `push` or `workflow_dispatch` event there is no PR to scope against, so nothing is gated and no comments are posted. You still get the full repo-wide ranking in the **job summary** and in `hotspot-report.json`. That makes it useful as a recurring health report — see [`examples/scheduled-report.yml`](examples/scheduled-report.yml).
 
 ---
 

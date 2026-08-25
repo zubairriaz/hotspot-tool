@@ -1,0 +1,46 @@
+# Strict — blocks the merge when a PR touches a hotspot.
+#
+# Only move here once you have watched `warn` for a while and tuned the
+# thresholds. Blocking on day one tends to get the action deleted.
+#
+# ESCAPE HATCH: add the `hotspot-acknowledge` label to a PR and the gate
+# downgrades block -> warn for that run. The findings still appear, the merge
+# is not blocked. Create the label once:
+#
+#   gh label create hotspot-acknowledge \
+#     --description "Hotspot findings acknowledged - do not block this PR" \
+#     --color FBCA04
+#
+# Copy to .github/workflows/hotspot.yml
+
+name: Hotspot
+
+on: pull_request
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  hotspot:
+    name: Hotspot
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: zubairriaz/hotspot-tool@v1
+        with:
+          enforcement-level: block
+
+          # A file must clear ALL THREE bars to be a hotspot.
+          hotspot-threshold: "90"   # top 10% by change frequency...
+          change-freq-min: "5"      # ...AND changed at least 5 times...
+          complexity-min: "10"      # ...AND cyclomatic complexity >= 10
+
+          # Raise the floors if the action is too chatty for your repo:
+          # change-freq-min: "10"
+          # complexity-min: "20"
+
+          acknowledge-label: hotspot-acknowledge

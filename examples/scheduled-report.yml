@@ -1,0 +1,51 @@
+# Scheduled repo-wide health report.
+#
+# Not a PR gate. This runs on a timer and produces the whole-repo hotspot
+# ranking in the job summary, plus a JSON artifact you can diff over time to
+# see whether the codebase is getting better or worse.
+#
+# On a non-pull_request event there is no PR to compare against, so the gate
+# has nothing to enforce and no comments are posted - you get the ranking and
+# the artifact only. That is the point here.
+#
+# Copy to .github/workflows/hotspot-report.yml
+
+name: Hotspot report
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"   # Mondays, 06:00 UTC
+  workflow_dispatch:       # ...and on demand from the Actions tab
+
+permissions:
+  contents: read
+
+jobs:
+  report:
+    name: Weekly hotspot report
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: zubairriaz/hotspot-tool@v1
+        id: hotspot
+        with:
+          enforcement-level: info
+
+          # Widen the lens for a trend report - a quarter reads better than
+          # the 90-day default when you are looking at direction, not detail.
+          history-window-days: "180"
+          generate-artifact: "true"
+
+      - name: Summarize
+        run: |
+          echo "Hotspots across the repo: ${{ steps.hotspot.outputs.hotspot-count }}"
+
+      # Retain longer than the 90-day default so you can compare quarters.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hotspot-report-${{ github.run_number }}
+          path: hotspot-report.json
+          retention-days: 365

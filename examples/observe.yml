@@ -1,0 +1,41 @@
+# Observe-only — zero footprint on your PRs.
+#
+# No comments, never fails. Findings go to the job summary and a JSON artifact.
+# Use this to gather evidence before proposing the tool to your team, or on a
+# repo where you are not ready for any PR noise at all.
+#
+# Copy to .github/workflows/hotspot.yml
+
+name: Hotspot (observe)
+
+on: pull_request
+
+permissions:
+  contents: read
+
+jobs:
+  hotspot:
+    name: Hotspot (observe)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: zubairriaz/hotspot-tool@v1
+        id: hotspot
+        with:
+          enforcement-level: info
+
+      # The findings are in the job summary. Keep the raw data too.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: hotspot-report
+          path: hotspot-report.json
+
+      - name: Print what would have been flagged
+        run: |
+          echo "gate-status:           ${{ steps.hotspot.outputs.gate-status }}"
+          echo "hotspots in repo:      ${{ steps.hotspot.outputs.hotspot-count }}"
+          echo "touched by this PR:    ${{ steps.hotspot.outputs.touched-hotspot-count }}"

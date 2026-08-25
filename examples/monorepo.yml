@@ -1,0 +1,54 @@
+# Monorepo / noisy repo — narrow what gets analyzed.
+#
+# Generated code, vendored packages and legacy directories churn constantly
+# without anyone "maintaining" them. Left in, they crowd out the files you
+# actually care about, because hotspot ranking is relative to the repo.
+#
+# `excludes` is ADDED ON TOP of the built-in defaults:
+#
+#   dist/**  build/**  out/**  .next/**  vendor/**  node_modules/**
+#   coverage/**  **/*.min.js  **/*.min.css  **/*.bundle.js
+#
+# Set `no-default-excludes: "true"` to replace those instead of extending them.
+#
+# The glob matcher supports * (within a segment), ** (across segments) and ?.
+# It does NOT support brace expansion - write `*.ts` and `*.tsx` on separate
+# lines rather than `*.{ts,tsx}`.
+#
+# Copy to .github/workflows/hotspot.yml
+
+name: Hotspot
+
+on: pull_request
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  hotspot:
+    name: Hotspot
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: zubairriaz/hotspot-tool@v1
+        with:
+          enforcement-level: warn
+
+          # Restrict static analysis to the languages you care about.
+          # These are LANGUAGE NAMES, not file extensions.
+          # Valid: typescript javascript python go java rust csharp
+          #        kotlin swift php ruby cpp scala
+          languages: typescript,go
+
+          # Newline- or comma-separated globs.
+          excludes: |
+            **/*.generated.ts
+            **/*.pb.go
+            **/__generated__/**
+            packages/legacy/**
+            docs/**
+            e2e/fixtures/**

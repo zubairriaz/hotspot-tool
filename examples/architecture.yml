@@ -1,0 +1,51 @@
+# Architecture gate — Martin's Distance.
+#
+# Independent of the hotspot score: a file with a spotless change history
+# still fails if it sits too far off the main sequence.
+#
+#   D = |A + I - 1|      0 = healthy, 1 = worst
+#   A = abstractness     interfaces / abstract types as a share of all types
+#   I = instability      Ce / (Ce + Ca) - outgoing deps over total
+#
+#   A~0, I~0, D~1  Zone of Pain        concrete and depended upon -> rigid
+#   A~1, I~1, D~1  Zone of Uselessness abstract and unused
+#
+# CALIBRATE FIRST. Run with `enforcement-level: info` and no `distance-max`
+# for a week, read the D values out of the job summary, then set a threshold
+# slightly above what your healthy modules score. Starting at 0.3 on a repo
+# that has never been measured will fail everything.
+#
+# Modules with no resolvable imports in either direction are skipped, not
+# scored - instability is undefined without coupling.
+#
+# Copy to .github/workflows/hotspot.yml
+
+name: Hotspot
+
+on: pull_request
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  hotspot:
+    name: Hotspot
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: zubairriaz/hotspot-tool@v1
+        with:
+          enforcement-level: block
+
+          # The architecture gate. Omit entirely to turn it off.
+          distance-max: "0.5"
+
+          # What counts as a "module":
+          #   file       each file scored alone - strictest, noisiest
+          #   directory  each folder aggregated - the default, usually right
+          #   workspace  the whole repo as one module
+          module-definition: directory

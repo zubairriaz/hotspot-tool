@@ -1,0 +1,54 @@
+# Tuned to your team's conventions.
+#
+# Two defaults are worth revisiting on an established repo:
+#
+# 1. BUG-FIX PATTERNS. The bug-fix ratio is a regex over commit messages. The
+#    default (fix,bug,patch,hotfix,revert) assumes conventional-commit style.
+#    If your team writes "PROJ-1234: correct rounding" then the default finds
+#    nothing and the ratio is meaningless. Match how you actually write.
+#
+# 2. HISTORY WINDOW. 90 days suits a repo under active development. On a
+#    slower codebase, widen it or almost nothing clears `change-freq-min`.
+#
+# Patterns are case-insensitive. An invalid regex logs a warning and is
+# skipped rather than failing the run.
+#
+# Copy to .github/workflows/hotspot.yml
+
+name: Hotspot
+
+on: pull_request
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  hotspot:
+    name: Hotspot
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: zubairriaz/hotspot-tool@v1
+        with:
+          enforcement-level: warn
+
+          # Half a year - a slower repo needs a wider lens.
+          history-window-days: "180"
+
+          # Comma- or newline-separated regexes. Examples of each style:
+          #   conventional commits  ->  ^fix,^revert
+          #   ticket-prefixed       ->  ^[A-Z]+-\d+,hotfix
+          #   prose                 ->  fix,bug,broken,regression,correct
+          bugfix-patterns: |
+            ^fix
+            ^revert
+            hotfix
+            regression
+            ^[A-Z]+-\d+
+
+          # Rename the escape-hatch label to match your process.
+          acknowledge-label: tech-debt-accepted
