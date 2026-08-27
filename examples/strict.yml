@@ -15,7 +15,20 @@
 
 name: Hotspot
 
-on: pull_request
+on:
+  pull_request:
+    # `labeled` and `unlabeled` are NOT in the default set, which is
+    # [opened, synchronize, reopened]. Without them, adding the
+    # hotspot-acknowledge label does not re-run this workflow, so the failing
+    # check never clears and the label appears to do nothing.
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+# Two runs on the same PR (a push landing next to a label change) would otherwise
+# race on delete-then-post and leave duplicate comments. This cancels the
+# superseded run, and saves CI minutes on rapid pushes.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 permissions:
   contents: read

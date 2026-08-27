@@ -93,6 +93,16 @@ Seven complete, copy-paste-ready workflows in [`examples/`](examples/) — nothi
 
 There is no summary comment in the PR conversation thread — all feedback is attached to the files it concerns.
 
+> **Add a `concurrency` group.** The delete-then-post sequence is not atomic. If two runs overlap on the same PR — a push landing next to a label change, or two pushes seconds apart — they race and leave duplicate comments. Cancel the superseded run:
+>
+> ```yaml
+> concurrency:
+>   group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+>   cancel-in-progress: true
+> ```
+>
+> Every comment-posting template in [`examples/`](examples/) includes this.
+
 ### Running outside a pull request
 
 On a `schedule`, `push` or `workflow_dispatch` event there is no PR to scope against, so nothing is gated and no comments are posted. You still get the full repo-wide ranking in the **job summary** and in `hotspot-report.json`. That makes it useful as a recurring health report — see [`examples/scheduled-report.yml`](examples/scheduled-report.yml).
@@ -112,6 +122,16 @@ On a `schedule`, `push` or `workflow_dispatch` event there is no PR to scope aga
 ### The acknowledge label
 
 When `block` is too blunt — you know the file is a hotspot and have a plan — add the `hotspot-acknowledge` label to the PR. The gate downgrades `block → warn` for that run, the findings still appear, and the merge is not blocked. Remove the label once addressed. Rename it with `acknowledge-label`.
+
+> **Your workflow must listen for label events.** `on: pull_request` defaults to `[opened, synchronize, reopened]` — adding a label does *not* re-run it, so the failing check never clears and the label looks broken. Declare the types explicitly:
+>
+> ```yaml
+> on:
+>   pull_request:
+>     types: [opened, synchronize, reopened, labeled, unlabeled]
+> ```
+>
+> [`examples/strict.yml`](examples/strict.yml) already does this.
 
 ---
 

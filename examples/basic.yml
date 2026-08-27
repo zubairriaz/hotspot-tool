@@ -9,6 +9,13 @@ name: Hotspot
 
 on: pull_request
 
+# Two runs on the same PR (a push landing next to a label change) would otherwise
+# race on delete-then-post and leave duplicate comments. This cancels the
+# superseded run, and saves CI minutes on rapid pushes.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
   pull-requests: write   # required — the action posts inline review comments
